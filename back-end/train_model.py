@@ -1,65 +1,50 @@
+import os
 import pandas as pd
 import numpy as np
-import os
 from sklearn.svm import SVC
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
 import joblib
 
-def extract_features_from_file(file_path):
-    df = pd.read_csv(file_path, header=None)
+LABEL_MAP = {'L': 'walk', 'O': 'run', 'S': 'stair_up'}
 
-    # Extract accelerometer (cols 2–4) and gyroscope (cols 6–8)
-    acc = df.iloc[:, 1:4]
-    gyro = df.iloc[:, 5:8]
-
+def extract_features(df):
     features = []
-
-    # For each sensor axis, extract basic features: mean, std, rms, max, min
-    for sensor in [acc, gyro]:
-        for axis in range(3):
-            data = sensor.iloc[:, axis]
-            features.append(data.mean())
-            features.append(data.std())
-            features.append(np.sqrt(np.mean(data ** 2)))  # RMS
-            features.append(data.max())
-            features.append(data.min())
-
-    # Also add Signal Magnitude Area (SMA)
-    sma_acc = np.mean(np.abs(acc).sum(axis=1))
-    sma_gyro = np.mean(np.abs(gyro).sum(axis=1))
-    features.append(sma_acc)
-    features.append(sma_gyro)
-
+    for i in range(2, 5):  # Acc X, Y, Z columns
+        axis_data = df.iloc[:, i]
+        features.extend([
+            axis_data.mean(),
+            axis_data.std(),
+            np.sqrt(np.mean(axis_data ** 2)),  # RMS
+            axis_data.max(),
+            axis_data.min()
+        ])
+    for i in range(5, 8):  # Gyro X, Y, Z columns
+        axis_data = df.iloc[:, i]
+        features.extend([
+            axis_data.mean(),
+            axis_data.std(),
+            np.sqrt(np.mean(axis_data ** 2)),
+            axis_data.max(),
+            axis_data.min()
+        ])
+    sma = df.iloc[:, 2:5].abs().sum().sum() / len(df)
+    features.append(sma)
     return features
 
-def load_dataset(folder_path):
+def train_model(dataset_dir):
     X, y = [], []
-    for filename in os.listdir(folder_path):
-        if filename.endswith(".csv"):
-            label = None
-            if "walk" in filename.lower():
-                label = 0
-            elif "run" in filename.lower():
-                label = 1
-            elif "stair" in filename.lower():
-                label = 2
-            if label is not None:
-                path = os.path.join(folder_path, filename)
-                features = extract_features_from_file(path)
-                X.append(features)
-                y.append(label)
-    return np.array(X), np.array(y)
 
-def train_model(data_folder, model_path="svm_model.pkl"):
-    X, y = load_dataset(data_folder)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    clf = SVC(kernel="linear")
-    clf.fit(X_train, y_train)
-    y_pred = clf.predict(X_test)
-    print(classification_report(y_test, y_pred))
-    joblib.dump(clf, model_path)
-    print(f"Model saved to {model_path}")
+    for filename in os.listdir(dataset_dir):
+        label_code = filename.split('_')[1]
+        label = LABEL_MAP.get(label_code)
+        if label:
+            path = os.path.join(dataset_dir, filename)
+            df = pd.read_csv(path, header=None)
+            features = extract_features(df)
+            X.append(features)
+            y.append(label)
 
-if __name__ == "__main__":
-    train_model("backend/dataset")
+    model = SVC(kernel='linear', probability=True)
+    model.fit(X, y)
+    joblib.dump(model, 'svm_model.pkl')
+    print("Model trained and saved as svm_model.pkl")
