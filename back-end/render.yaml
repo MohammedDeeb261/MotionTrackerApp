@@ -1,9 +1,10 @@
-services:
-  - type: web
-    name: motion-server
-    runtime: python
-    buildCommand: ""
-    startCommand: gunicorn app:app
-    envVars:
-      - key: PORT
-        value: 10000
+hods=['POST'])
+def train():
+    train_model('backend/dataset')  
+    return jsonify({"status": "Model trained and saved"})
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    data = request.get_json()
+    prediction = load_model_and_predict(data)
+    return jsonify({"prediction": prediction})

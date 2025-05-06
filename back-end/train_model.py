@@ -2,49 +2,57 @@ import os
 import pandas as pd
 import numpy as np
 from sklearn.svm import SVC
-from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
 import joblib
 
-LABEL_MAP = {'L': 'walk', 'O': 'run', 'S': 'stair_up'}
+MODEL_PATH = "backend/svm_model.pkl"
 
 def extract_features(df):
     features = []
-    for i in range(2, 5):  # Acc X, Y, Z columns
-        axis_data = df.iloc[:, i]
+    for col in ['acc_x', 'acc_y', 'acc_z', 'gyro_x', 'gyro_y', 'gyro_z']:
+        series = df[col]
         features.extend([
-            axis_data.mean(),
-            axis_data.std(),
-            np.sqrt(np.mean(axis_data ** 2)),  # RMS
-            axis_data.max(),
-            axis_data.min()
+            series.mean(),
+            series.std(),
+            np.sqrt(np.mean(series**2)),  # RMS
+            series.max(),
+            series.min()
         ])
-    for i in range(5, 8):  # Gyro X, Y, Z columns
-        axis_data = df.iloc[:, i]
-        features.extend([
-            axis_data.mean(),
-            axis_data.std(),
-            np.sqrt(np.mean(axis_data ** 2)),
-            axis_data.max(),
-            axis_data.min()
-        ])
-    sma = df.iloc[:, 2:5].abs().sum().sum() / len(df)
+    sma = np.sum(np.abs(df[['acc_x', 'acc_y', 'acc_z']])).sum() / len(df)
     features.append(sma)
     return features
 
-def train_model(dataset_dir):
-    X, y = [], []
+def load_csv_files(directory):
+    X = []
+    y = []
+    for filename in os.listdir(directory):
+        if filename.endswith(".csv"):
+            label = None
+            if "_L_" in filename:
+                label = 0  # walk
+            elif "_O_" in filename:
+                label = 1  # run
+            elif "_S_" in filename:
+                label = 2  # stair up
+            if label is not None:
+                path = os.path.join(directory, filename)
+                df = pd.read_csv(path, header=None)
+                df.columns = ["time_acc", "acc_x", "acc_y", "acc_z", "time_gyro", "gyro_x", "gyro_y", "gyro_z"]
+                features = extract_features(df)
+                X.append(features)
+                y.append(label)
+    return np.array(X), np.array(y)
 
-    for filename in os.listdir(dataset_dir):
-        label_code = filename.split('_')[1]
-        label = LABEL_MAP.get(label_code)
-        if label:
-            path = os.path.join(dataset_dir, filename)
-            df = pd.read_csv(path, header=None)
-            features = extract_features(df)
-            X.append(features)
-            y.append(label)
+def train_model(data_dir):
+    X, y = load_csv_files(data_dir)
+    clf = make_pipeline(StandardScaler(), SVC(kernel='linear'))
+    clf.fit(X, y)
+    joblib.dump(clf, MODEL_PATH)
 
-    model = SVC(kernel='linear', probability=True)
-    model.fit(X, y)
-    joblib.dump(model, 'svm_model.pkl')
-    print("Model trained and saved as svm_model.pkl")
+def load_model_and_predict(feature_dict):
+    clf = joblib.load(MODEL_PATH)
+    x_input = np.array([list(feature_dict.values())]).reshape(1, -1)
+    prediction = clf.predict(x_input)[0]
+    label_map = {0: "walk", 1: "run", 2: "stair up"}
+    return label_map[prediction]
