@@ -1,10 +1,9 @@
-hods=['POST'])
-def train():
-    train_model('backend/dataset')  
-    return jsonify({"status": "Model trained and saved"})
-
-@app.route('/predict', methods=['POST'])
-def predict():
-    data = request.get_json()
-    prediction = load_model_and_predict(data)
-    return jsonify({"prediction": prediction})
+services:
+  - type: web
+    name: motion-server
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9
