@@ -12,5 +12,5 @@ def predict():
 
 @app.route('/train', methods=['POST'])
 def train():
-    train_model("backend/dataset")  # Points to the folder where CSVs are
+    train_model("training_datasets")  # Points to the folder where CSVs are
     return jsonify({"status": "Model trained and saved"})
