@@ -5,7 +5,7 @@ app = Flask(__name__)
 
 @app.route('/train', methods=['POST'])
 def train():
-    train_model('backend/dataset')  # This is where your CSV files are stored
+    train_model('dataset')  
     return jsonify({"status": "Model trained and saved"})
 
 @app.route('/predict', methods=['POST'])
