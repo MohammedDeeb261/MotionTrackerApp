@@ -4,3 +4,6 @@ pandas
 numpy
 gunicorn
 joblib
+
+# Added Flask-Blueprint for modular route handling
+flask-blueprint
