@@ -16,34 +16,50 @@ MODEL_PATH = "svm_model.pkl"
 def load_csv_files(directory):
     X = []
     y = []
-    for filename in os.listdir(directory):
-        if filename.endswith(".csv"):
+    for root, subdirs, files in os.walk(directory):  # Traverse all subdirectories
+        for subdir in subdirs:  # Process each subdirectory (e.g., 002_L_3)
             label = None
-            if "_L_" in filename:
+            if "_L_" in subdir:
                 label = 0  # walk
-            elif "_O_" in filename:
+            elif "_O_" in subdir:
                 label = 1  # run
-            elif "_S_" in filename:
+            elif "_S_" in subdir:
                 label = 2  # stair up
 
             if label is not None:
-                path = os.path.join(directory, filename)
-                df = pd.read_csv(path, header=None)
-                df.columns = ["time_acc", "acc_x", "acc_y", "acc_z", "time_gyro", "gyro_x", "gyro_y", "gyro_z"]
+                subdir_path = os.path.join(root, subdir)
+                for filename in os.listdir(subdir_path):
+                    if filename.startswith("window_") and filename.endswith(".csv"):
+                        path = os.path.join(subdir_path, filename)
+                        df = pd.read_csv(path, header=None)
 
-                # Log the DataFrame structure for debugging
-                logging.debug(f"Processing file: {filename}")
-                logging.debug(f"DataFrame head:\n{df.head()}")
+                        # Log the DataFrame structure for debugging
+                        logging.debug(f"Processing file: {filename} in folder: {subdir}")
+                        logging.debug(f"DataFrame columns: {df.columns}")
+                        logging.debug(f"DataFrame head:\n{df.head()}")
 
-                features = extract_features(df)
+                        # Ensure the DataFrame has the expected columns
+                        if df.shape[1] >= 8:  # Check if there are at least 8 columns
+                            df.columns = ["time_acc", "acc_x", "acc_y", "acc_z", "time_gyro", "gyro_x", "gyro_y", "gyro_z"]
 
-                # Log extracted features
-                logging.debug(f"Extracted features for {filename}: {features}")
+                            if not df.empty:
+                                features = extract_features(df)
 
-                X.append(features)
-                y.append(label)
+                                # Log extracted features
+                                logging.debug(f"Extracted features for {filename}: {features}")
+
+                                X.append(features)
+                                y.append(label)
+                            else:
+                                logging.warning(f"File {filename} in folder {subdir} is empty. Skipping.")
+                        else:
+                            logging.error(f"File {filename} does not have the required columns. Skipping.")
             else:
-                logging.warning(f"Filename {filename} does not match expected patterns (_L_, _O_, _S_). Skipping.")
+                logging.warning(f"Subdirectory {subdir} does not match expected patterns (_L_, _O_, _S_). Skipping.")
+
+    if len(X) == 0:
+        logging.error("No valid data found in the directory. Ensure the files are correctly formatted and not empty.")
+        raise ValueError("No valid data found in the directory.")
 
     return np.array(X), np.array(y)
 

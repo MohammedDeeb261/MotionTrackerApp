@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 app = Flask(__name__)
 
 MODEL_PATH = "svm_model.pkl"
-TRAIN_FOLDER = "dataset"
+TRAIN_FOLDER = "training_windows"
 
 # Moved route definitions to separate files in the `routes` folder
 from routes.test_routes import test_routes

@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify
-from services.evaluation_service import evaluate_model
+from evaluate_model import evaluate_model
 import matplotlib.pyplot as plt
+import os
 
 # Define the blueprint for evaluate routes
 evaluate_routes = Blueprint('evaluate_routes', __name__)
@@ -8,7 +9,9 @@ evaluate_routes = Blueprint('evaluate_routes', __name__)
 @evaluate_routes.route("/", methods=["GET"])
 def evaluate():
     try:
-        result = evaluate_model("dataset")
+        # Dynamically use the testing_windows directory
+        data_dir = os.path.join(os.getcwd(), "testing_windows")
+        result = evaluate_model(data_dir)
 
         # Generate a bar chart for the results
         activities = list(result.keys())
@@ -21,7 +24,7 @@ def evaluate():
         plt.xticks(x, activities)
         plt.xlabel('Activities')
         plt.ylabel('Number of Files')
-        plt.title('Training Data Evaluation Results')
+        plt.title('Evaluation Results')
         plt.legend()
 
         # Add text annotations for passed counts only
@@ -29,7 +32,7 @@ def evaluate():
             plt.text(i, total[i], f"Passed: {passed[i]}/{total[i]}", ha='center', va='bottom', fontsize=9, color='black')
 
         # Save the graph as an image
-        graph_path = "training_evaluation_results.png"
+        graph_path = os.path.join(os.getcwd(), "evaluation_results.png")
         plt.savefig(graph_path)
         plt.close()
 
@@ -41,6 +44,6 @@ def evaluate():
             } for activity in activities
         }
 
-        return jsonify({"message": "Training evaluation completed. Graph saved.", "graph_path": graph_path, "summary": summary})
+        return jsonify({"message": "Evaluation completed. Graph saved.", "graph_path": graph_path, "summary": summary})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
