@@ -1,11 +1,13 @@
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import axios from 'axios';
 
 type SensorSample = { x: number; y: number; z: number };
 
 export default function MotionScreen() {
   const [features, setFeatures] = useState<Record<string, number>>({});
+  const [prediction, setPrediction] = useState<string>("");
 
   const accBuffer: SensorSample[] = [];
   const gyroBuffer: SensorSample[] = [];
@@ -17,7 +19,7 @@ export default function MotionScreen() {
     const accSub = Accelerometer.addListener((data) => accBuffer.push(data));
     const gyroSub = Gyroscope.addListener((data) => gyroBuffer.push(data));
 
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       if (accBuffer.length === 0 || gyroBuffer.length === 0) return;
 
       const computeStats = (arr: number[]) => {
@@ -46,13 +48,23 @@ export default function MotionScreen() {
       const gyroStats = getStats(gyroBuffer, "gyro");
       const sma = accBuffer.map((s) => Math.abs(s.x) + Math.abs(s.y) + Math.abs(s.z)).reduce((a, b) => a + b, 0) / accBuffer.length;
 
-      setFeatures({
+      const allFeatures = {
         ...accStats,
         acc_sma: sma,
         ...gyroStats,
-      });
+      };
+
+      setFeatures(allFeatures);
+
+      try {
+        const response = await axios.post('https://motiontrackerapp.onrender.com/predict', allFeatures);
+        setPrediction(response.data.prediction);
+      } catch (error) {
+        console.error('Error calling /predict:', error);
+      }
 
       accBuffer.length = 0;
+    
       gyroBuffer.length = 0;
     }, 1000);
 
@@ -90,6 +102,7 @@ export default function MotionScreen() {
       <Text style={styles.header}>Motion Feature Summary</Text>
       {renderFeatureGroup("Accelerometer Features", "acc")}
       {renderFeatureGroup("Gyroscope Features", "gyro")}
+      <Text style={styles.prediction}>Prediction: {prediction}</Text>
     </ScrollView>
   );
 }
@@ -100,4 +113,5 @@ const styles = StyleSheet.create({
   section: { marginBottom: 20 },
   sectionTitle: { fontSize: 18, fontWeight: "600", marginBottom: 8, color: "#333" },
   text: { fontSize: 15, marginVertical: 2 },
+  prediction: { fontSize: 16, fontWeight: "500", textAlign: "center", marginTop: 20, color: "#555" },
 });
