@@ -1,20 +1,24 @@
 import pandas as pd
 import os
 
-def split_csv_into_windows(input_file, output_dir, rows_per_window=100):
+def split_csv_into_windows(input_file, output_dir, sampling_rate, window_duration=1):
     """
     Splits a CSV file into smaller windows of data and saves each window into its own file.
 
     Parameters:
         input_file (str): Path to the input CSV file.
         output_dir (str): Directory where the output files will be saved.
-        rows_per_window (int): Number of rows per window (default is 100).
+        sampling_rate (int): Number of samples per second.
+        window_duration (int): Duration of each window in seconds (default is 1 second).
     """
     # Read the input CSV file
     data = pd.read_csv(input_file)
     
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
+    
+    # Calculate the number of rows per window
+    rows_per_window = sampling_rate * window_duration
     
     # Calculate the number of windows
     num_windows = len(data) // rows_per_window
@@ -32,15 +36,15 @@ def split_csv_into_windows(input_file, output_dir, rows_per_window=100):
         print(f"Saved: {output_file}")
 
 # Update the rows_per_window parameter to match the front-end's 1-second interval
-# Assuming the data is sampled at 100 Hz (100 rows per second)
-def process_all_files_in_directory(input_dir, output_dir, rows_per_window=100):
+def process_all_files_in_directory(input_dir, output_dir, sampling_rate, window_duration=1):
     """
     Processes all CSV files in a directory, splitting them into smaller windows.
 
     Parameters:
         input_dir (str): Path to the directory containing input CSV files.
         output_dir (str): Path to the directory where output files will be saved.
-        rows_per_window (int): Number of rows per window (default is 100, matching 1-second intervals).
+        sampling_rate (int): Number of samples per second.
+        window_duration (int): Duration of each window in seconds (default is 1 second).
     """
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
@@ -51,7 +55,7 @@ def process_all_files_in_directory(input_dir, output_dir, rows_per_window=100):
             input_file = os.path.join(input_dir, filename)
             file_output_dir = os.path.join(output_dir, os.path.splitext(filename)[0])
             os.makedirs(file_output_dir, exist_ok=True)
-            split_csv_into_windows(input_file, file_output_dir, rows_per_window)
+            split_csv_into_windows(input_file, file_output_dir, sampling_rate, window_duration)
 
 # Example usage
 # Input directories
@@ -63,6 +67,6 @@ training_output_dir = "training_windows"
 testing_output_dir = "testing_windows"
 
 # Process all files in the training and testing directories
-# Assuming 100 rows per second, 1-second intervals would be 100 rows per window
-process_all_files_in_directory(training_dir, training_output_dir, rows_per_window=100)
-process_all_files_in_directory(testing_dir, testing_output_dir, rows_per_window=100)
+# Assuming the data is sampled at 10 Hz (10 samples per second) and each window is 1 second
+process_all_files_in_directory(training_dir, training_output_dir, sampling_rate=10, window_duration=1)
+process_all_files_in_directory(testing_dir, testing_output_dir, sampling_rate=10, window_duration=1)

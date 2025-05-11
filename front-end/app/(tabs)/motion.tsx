@@ -7,22 +7,32 @@ type SensorSample = { x: number; y: number; z: number };
 
 export default function MotionScreen() {
   const [prediction, setPrediction] = useState<string>("");
+  const [sampleCount, setSampleCount] = useState<number>(0);
 
+  // Buffers to collect data for 1 second
   const accBuffer: SensorSample[] = [];
   const gyroBuffer: SensorSample[] = [];
-  const predictions: string[] = [];
 
   useEffect(() => {
-    Accelerometer.setUpdateInterval(1000); // 1 Hz (every 1 second)
-    Gyroscope.setUpdateInterval(1000);    // 1 Hz
+    // 🔄 Set the sampling rate to 10 Hz (10 samples per second)
+    Accelerometer.setUpdateInterval(100); // 10 Hz
+    Gyroscope.setUpdateInterval(100);    // 10 Hz
 
+    // Collect data in buffers
     const accSub = Accelerometer.addListener((data) => accBuffer.push(data));
     const gyroSub = Gyroscope.addListener((data) => gyroBuffer.push(data));
 
+    // Send every 1 second (1000 ms)
     const interval = setInterval(async () => {
-      if (accBuffer.length === 0 || gyroBuffer.length === 0) return;
+      if (accBuffer.length < 10 || gyroBuffer.length < 10) {
+        console.warn("Not enough samples collected, skipping this window.");
+        return;
+      }
 
-      // Send raw accelerometer and gyroscope data to the back-end
+      // Display the number of samples collected
+      setSampleCount(accBuffer.length);
+
+      // Prepare the payload
       const rawData = {
         accelerometer: accBuffer,
         gyroscope: gyroBuffer,
@@ -30,36 +40,27 @@ export default function MotionScreen() {
 
       try {
         const response = await axios.post('https://motiontrackerapp.onrender.com/predict', rawData);
-        predictions.push(response.data.prediction);
+        setPrediction(response.data.prediction);
       } catch (error) {
         console.error('Error calling /predict:', error);
       }
 
+      // Clear the buffers
       accBuffer.length = 0;
       gyroBuffer.length = 0;
-    }, 1000); // Every 1 second
-
-    const votingInterval = setInterval(() => {
-      if (predictions.length >= 5) { // 5-second activity duration
-        const finalPrediction = predictions.reduce((a, b, i, arr) =>
-          arr.filter(v => v === a).length >= arr.filter(v => v === b).length ? a : b
-        );
-        setPrediction(finalPrediction);
-        predictions.length = 0;
-      }
-    }, 5000); // Every 5 seconds
+    }, 1000); // Send every 1 second
 
     return () => {
       accSub.remove();
       gyroSub.remove();
       clearInterval(interval);
-      clearInterval(votingInterval);
     };
   }, []);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.header}>Motion Feature Summary</Text>
+      <Text style={styles.subheader}>Samples per second: {sampleCount}</Text>
       <Text style={styles.prediction}>Prediction: {prediction}</Text>
     </ScrollView>
   );
@@ -68,5 +69,6 @@ export default function MotionScreen() {
 const styles = StyleSheet.create({
   container: { padding: 16 },
   header: { fontSize: 22, fontWeight: "bold", textAlign: "center", marginBottom: 20 },
+  subheader: { fontSize: 16, fontWeight: "500", textAlign: "center", marginBottom: 10 },
   prediction: { fontSize: 16, fontWeight: "500", textAlign: "center", marginTop: 20, color: "#555" },
 });
