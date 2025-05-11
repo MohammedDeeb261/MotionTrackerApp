@@ -6,7 +6,7 @@ import os
 # Define the blueprint for test routes
 test_routes = Blueprint('test_routes', __name__)
 
-@test_routes.route("/test", methods=["GET"])
+@test_routes.route("/", methods=["GET"])
 def test_model():
     try:
         # Dynamically use the testing_windows directory

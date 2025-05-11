@@ -9,8 +9,8 @@ evaluate_routes = Blueprint('evaluate_routes', __name__)
 @evaluate_routes.route("/", methods=["GET"])
 def evaluate():
     try:
-        # Dynamically use the testing_windows directory
-        data_dir = os.path.join(os.getcwd(), "testing_windows")
+        # Dynamically use the training_windows directory
+        data_dir = os.path.join(os.getcwd(), "training_windows")
         result = evaluate_model(data_dir)
 
         # Generate a bar chart for the results

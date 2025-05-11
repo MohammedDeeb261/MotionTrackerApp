@@ -109,8 +109,8 @@ export default function MotionScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.header}>Motion Feature Summary</Text>
-      {renderFeatureGroup("Accelerometer Features", "acc")}
-      {renderFeatureGroup("Gyroscope Features", "gyro")}
+      {/*renderFeatureGroup("Accelerometer Features", "acc")*/}
+      {/*renderFeatureGroup("Gyroscope Features", "gyro")*/}
       <Text style={styles.prediction}>Prediction: {prediction}</Text>
     </ScrollView>
   );

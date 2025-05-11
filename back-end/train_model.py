@@ -69,7 +69,7 @@ def train_model(data_dir):
     # Log dataset size
     logging.info(f"Training dataset size: {len(X)} samples")
 
-    clf = make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=5))
+    clf = make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=3))
     clf.fit(X, y)
 
     # Log model training completion
