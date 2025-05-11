@@ -12,24 +12,32 @@ def evaluate_model(data_folder):
 
     label_map = {0: "walk", 1: "run", 2: "stair up"}
 
-    for filename in os.listdir(data_folder):
-        if filename.endswith(".csv"):
-            path = os.path.join(data_folder, filename)
-            df = pd.read_csv(path, header=None)
-            df.columns = ["time_acc", "acc_x", "acc_y", "acc_z", "time_gyro", "gyro_x", "gyro_y", "gyro_z"]
+    for subdir in os.listdir(data_folder):
+        subdir_path = os.path.join(data_folder, subdir)
+        if os.path.isdir(subdir_path):
+            true_label = get_true_label(subdir)
+            predictions = []
 
-            features = extract_features(df)
-            pred = clf.predict([features])[0]
-            true_label = get_true_label(filename)
+            for filename in os.listdir(subdir_path):
+                if filename.startswith("window_") and filename.endswith(".csv"):
+                    path = os.path.join(subdir_path, filename)
+                    df = pd.read_csv(path, header=None)
+                    df.columns = ["time_acc", "acc_x", "acc_y", "acc_z", "time_gyro", "gyro_x", "gyro_y", "gyro_z"]
 
-            # Convert predicted and true labels to the same format (strings)
-            predicted_activity = label_map.get(pred, "unknown")
-            true_activity = label_map.get(true_label, "unknown")
+                    features = extract_features(df)
+                    pred = clf.predict([features])[0]
+                    predictions.append(pred)
 
-            if true_activity in activity_counts:
-                activity_counts[true_activity]["total"] += 1
-                if predicted_activity == true_activity:
-                    activity_counts[true_activity]["passed"] += 1
+            # Perform voting to determine the final predicted activity for the folder
+            if predictions:
+                final_pred = max(set(predictions), key=predictions.count)
+                predicted_activity = label_map.get(final_pred, "unknown")
+                true_activity = label_map.get(true_label, "unknown")
+
+                if true_activity in activity_counts:
+                    activity_counts[true_activity]["total"] += 1
+                    if predicted_activity == true_activity:
+                        activity_counts[true_activity]["passed"] += 1
 
     return activity_counts
 

@@ -61,5 +61,6 @@ training_output_dir = "training_windows"
 testing_output_dir = "testing_windows"
 
 # Process all files in the training and testing directories
-process_all_files_in_directory(training_dir, training_output_dir, rows_per_window=100)
-process_all_files_in_directory(testing_dir, testing_output_dir, rows_per_window=100)
+# Assuming 100 rows per second, 3 seconds would be 300 rows per window
+process_all_files_in_directory(training_dir, training_output_dir, rows_per_window=300)
+process_all_files_in_directory(testing_dir, testing_output_dir, rows_per_window=300)

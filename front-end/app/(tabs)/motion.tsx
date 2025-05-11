@@ -11,10 +11,11 @@ export default function MotionScreen() {
 
   const accBuffer: SensorSample[] = [];
   const gyroBuffer: SensorSample[] = [];
+  const predictions: string[] = [];
 
   useEffect(() => {
-    Accelerometer.setUpdateInterval(100); // 10 Hz
-    Gyroscope.setUpdateInterval(100);     // 10 Hz
+    Accelerometer.setUpdateInterval(200); // 5 Hz (every 5th of a second)
+    Gyroscope.setUpdateInterval(200);    // 5 Hz
 
     const accSub = Accelerometer.addListener((data) => accBuffer.push(data));
     const gyroSub = Gyroscope.addListener((data) => gyroBuffer.push(data));
@@ -54,24 +55,32 @@ export default function MotionScreen() {
         ...gyroStats,
       };
 
-      setFeatures(allFeatures);
-
       try {
         const response = await axios.post('https://motiontrackerapp.onrender.com/predict', allFeatures);
-        setPrediction(response.data.prediction);
+        predictions.push(response.data.prediction);
       } catch (error) {
         console.error('Error calling /predict:', error);
       }
 
       accBuffer.length = 0;
-    
       gyroBuffer.length = 0;
-    }, 1000);
+    }, 200); // Every 5th of a second
+
+    const votingInterval = setInterval(() => {
+      if (predictions.length > 0) {
+        const finalPrediction = predictions.reduce((a, b, i, arr) =>
+          arr.filter(v => v === a).length >= arr.filter(v => v === b).length ? a : b
+        );
+        setPrediction(finalPrediction);
+        predictions.length = 0;
+      }
+    }, 1000); // Every second
 
     return () => {
       accSub.remove();
       gyroSub.remove();
       clearInterval(interval);
+      clearInterval(votingInterval);
     };
   }, []);
 
@@ -100,8 +109,8 @@ export default function MotionScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.header}>Motion Feature Summary</Text>
-      {/*renderFeatureGroup("Accelerometer Features", "acc")*/}
-      {/* {renderFeatureGroup("Gyroscope Features", "gyro")} */}
+      {renderFeatureGroup("Accelerometer Features", "acc")}
+      {renderFeatureGroup("Gyroscope Features", "gyro")}
       <Text style={styles.prediction}>Prediction: {prediction}</Text>
     </ScrollView>
   );

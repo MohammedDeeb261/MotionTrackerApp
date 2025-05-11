@@ -1,8 +1,8 @@
 Flask
-scikit-learn
 pandas
 numpy
 gunicorn
 joblib
 flask-blueprint
 matplotlib
+scikit-learn==1.4.2
