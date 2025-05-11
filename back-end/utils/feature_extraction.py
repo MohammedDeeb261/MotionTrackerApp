@@ -59,7 +59,8 @@ def extract_features_from_raw_data(acc_data, gyro_data):
     :return: List of extracted features
     """
     def compute_stats(data):
-        clean_data = [d for d in data if not np.isnan(d)]
+       
+        clean_data = data  # No filtering of NaN values
         if len(clean_data) == 0:
             return [0, 0, 0, 0, 0]  # mean, std, rms, max, min
 
