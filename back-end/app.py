@@ -28,16 +28,14 @@ app.register_blueprint(evaluate_routes, url_prefix='/evaluate')
 def predict():
     data = request.get_json()
     try:
-        # Extract features from the incoming JSON data
-        features = [
-            data["acc_meanX"], data["acc_stdX"], data["acc_rmsX"], data["acc_maxX"], data["acc_minX"],
-            data["acc_meanY"], data["acc_stdY"], data["acc_rmsY"], data["acc_maxY"], data["acc_minY"],
-            data["acc_meanZ"], data["acc_stdZ"], data["acc_rmsZ"], data["acc_maxZ"], data["acc_minZ"],
-            data["gyro_meanX"], data["gyro_stdX"], data["gyro_rmsX"], data["gyro_maxX"], data["gyro_minX"],
-            data["gyro_meanY"], data["gyro_stdY"], data["gyro_rmsY"], data["gyro_maxY"], data["gyro_minY"],
-            data["gyro_meanZ"], data["gyro_stdZ"], data["gyro_rmsZ"], data["gyro_maxZ"], data["gyro_minZ"],
-            data["acc_sma"]
-        ]
+        # Extract raw accelerometer and gyroscope data from the request
+        acc_data = data.get("accelerometer", [])
+        gyro_data = data.get("gyroscope", [])
+
+        # Extract features using the new function
+        from utils.feature_extraction import extract_features_from_raw_data
+        features = extract_features_from_raw_data(acc_data, gyro_data)
+
         clf = joblib.load(MODEL_PATH)
         prediction = clf.predict([features])[0]
         label_map = {0: "walk", 1: "run", 2: "stair up"}
