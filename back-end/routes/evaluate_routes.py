@@ -31,6 +31,11 @@ def evaluate():
         for i, activity in enumerate(activities):
             plt.text(i, total[i], f"Passed: {passed[i]}/{total[i]}", ha='center', va='bottom', fontsize=9, color='black')
 
+        # Add text annotations for accuracy percentage
+        for i, activity in enumerate(activities):
+            accuracy = (passed[i] / total[i]) * 100 if total[i] > 0 else 0
+            plt.text(i, total[i], f"Accuracy: {accuracy:.2f}%", ha='center', va='top', fontsize=9, color='blue')
+
         # Save the graph as an image
         graph_path = os.path.join(os.getcwd(), "evaluation_results.png")
         plt.savefig(graph_path)

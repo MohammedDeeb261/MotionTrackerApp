@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 import joblib
@@ -69,7 +69,7 @@ def train_model(data_dir):
     # Log dataset size
     logging.info(f"Training dataset size: {len(X)} samples")
 
-    clf = make_pipeline(StandardScaler(), SVC(kernel='linear'))
+    clf = make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=5))
     clf.fit(X, y)
 
     # Log model training completion
