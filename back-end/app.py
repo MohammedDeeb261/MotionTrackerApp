@@ -25,14 +25,16 @@ app.register_blueprint(test_routes, url_prefix='/test')
 app.register_blueprint(evaluate_routes, url_prefix='/evaluate')
 
 # Predict endpoint
-# Predict endpoint
 @app.route("/predict", methods=["POST"])
 def predict():
     data = request.get_json()
     try:
-        # Convert incoming JSON data to a DataFrame
+        # Wrap each scalar value in a list to satisfy DataFrame constructor
+        data = {key: [value] for key, value in data.items()}
+
+        # Convert to DataFrame
         df = pd.DataFrame(data)
-        
+
         # Call the extract_features function to generate the features
         features = extract_features(df)
         
@@ -48,6 +50,7 @@ def predict():
     except Exception as e:
         logging.error(f"Prediction error: {e}")
         return jsonify({"error": str(e)}), 400
+
 
 # Train endpoint
 @app.route("/train", methods=["POST"])
