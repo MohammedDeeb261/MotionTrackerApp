@@ -1,11 +1,9 @@
 Flask
+flask-cors
 pandas
 numpy
 gunicorn
-joblib
-flask-blueprint
 matplotlib
 tensorflow
-numpy
-pandas
 scikit-learn
+joblib
