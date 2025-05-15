@@ -1,86 +1,92 @@
 import os
-import pandas as pd
 import numpy as np
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
-import joblib
-import logging
-from utils.feature_extraction import extract_features
+import pandas as pd
+from sklearn.model_selection import train_test_split
+import tensorflow 
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropout
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.callbacks import EarlyStopping
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Import Adam optimizer with compatibility for TensorFlow 2.x and Keras standalone
+try:
+    from tensorflow.keras.optimizers import Adam
+except ImportError:
+    from keras.optimizers import Adam
 
-MODEL_PATH = "svm_model.pkl"
+# Settings
+DATA_DIR = 'data/train'
+CLASSES = ['walk', 'stand', 'run']
+WINDOW_SIZE = 100  # 100 samples at 100Hz = 1 second
+N_CHANNELS = 6
+BATCH_SIZE = 32
+EPOCHS = 75
+LEARNING_RATE = 0.001
 
-def load_csv_files(directory):
+# Load all windows from the class directory
+def load_dataset():
     X = []
     y = []
-    for root, subdirs, files in os.walk(directory):  # Traverse all subdirectories
-        for subdir in subdirs:  # Process each subdirectory (e.g., 002_L_3)
-            label = None
-            if "_L_" in subdir:
-                label = 0  # walk
-            elif "_O_" in subdir:
-                label = 1  # run
-            elif "_S_" in subdir:
-                label = 2  # stair up
+    skipped = 0
+    shape_counts = {}
+    for class_idx, class_name in enumerate(CLASSES):
+        class_dir = os.path.join(DATA_DIR, class_name)
+        print(f"[INFO] Checking class_dir: {class_dir}")
+        if not os.path.exists(class_dir):
+            print(f"[WARN] Directory does not exist: {class_dir}")
+            continue
+        for fname in os.listdir(class_dir):
+            fpath = os.path.join(class_dir, fname)
+            print(f"[INFO] Checking file: {fpath}")
+            if fname.endswith('.csv') and os.path.isfile(fpath):
+                df = pd.read_csv(fpath, header=None)
+                # Select only the 6 sensor columns: accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z
+                df_sensor = df.iloc[:, [1,2,3,5,6,7]]
+                shape = df_sensor.shape
+                shape_counts[shape] = shape_counts.get(shape, 0) + 1
+                if shape == (WINDOW_SIZE, N_CHANNELS):
+                    X.append(df_sensor.values)
+                    y.append(class_idx)
+                else:
+                    print(f"[SKIP] {fpath} shape={df_sensor.shape}")
+                    skipped += 1
+    print(f"Loaded {len(X)} windows. Skipped {skipped} files.")
+    print(f"File shape summary: {shape_counts}")
+    X = np.array(X)
+    y = np.array(y)
+    return X, y
 
-            if label is not None:
-                subdir_path = os.path.join(root, subdir)
-                for filename in os.listdir(subdir_path):
-                    if filename.startswith("window_") and filename.endswith(".csv"):
-                        path = os.path.join(subdir_path, filename)
-                        df = pd.read_csv(path, header=None)
+def build_cnn_model(input_shape, n_classes):
+    model = Sequential([
+        Conv1D(32, kernel_size=3, activation='relu', input_shape=input_shape),
+        MaxPooling1D(pool_size=2),
+        Conv1D(64, kernel_size=3, activation='relu'),
+        MaxPooling1D(pool_size=2),
+        Conv1D(128, kernel_size=3, activation='relu'),
+        Flatten(),
+        Dense(128, activation='relu'),
+        Dropout(0.5),
+        Dense(n_classes, activation='softmax')
+    ])
+    model.compile(optimizer=Adam(learning_rate=LEARNING_RATE),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    return model
 
-                        # Log the DataFrame structure for debugging
-                        logging.debug(f"Processing file: {filename} in folder: {subdir}")
-                        logging.debug(f"DataFrame columns: {df.columns}")
-                        logging.debug(f"DataFrame head:\n{df.head()}")
+def main():
+    print('Loading and processing data...')
+    X, y = load_dataset()
+    print(f'Dataset shape: {X.shape}, Labels: {y.shape}')
+    y_cat = to_categorical(y, num_classes=len(CLASSES))
+    X_train, X_val, y_train, y_val = train_test_split(X, y_cat, test_size=0.2, random_state=42)
 
-                        # Ensure the DataFrame has the expected columns
-                        if df.shape[1] >= 8:  # Check if there are at least 8 columns
-                            df.columns = ["time_acc", "acc_x", "acc_y", "acc_z", "time_gyro", "gyro_x", "gyro_y", "gyro_z"]
+    print('Building model...')
+    model = build_cnn_model((WINDOW_SIZE, N_CHANNELS), len(CLASSES))
+    es = EarlyStopping(monitor='val_loss', patience=8, restore_best_weights=True)
+    print('Training...')
+    model.fit(X_train, y_train, epochs=EPOCHS, batch_size=BATCH_SIZE, validation_data=(X_val, y_val), callbacks=[es])
+    model.save('cnn_motion_model.h5')
+    print('Model saved as cnn_motion_model.h5')
 
-                            if not df.empty:
-                                features = extract_features(df)
-
-                                # Log extracted features
-                                logging.debug(f"Extracted features for {filename}: {features}")
-
-                                X.append(features)
-                                y.append(label)
-                            else:
-                                logging.warning(f"File {filename} in folder {subdir} is empty. Skipping.")
-                        else:
-                            logging.error(f"File {filename} does not have the required columns. Skipping.")
-            else:
-                logging.warning(f"Subdirectory {subdir} does not match expected patterns (_L_, _O_, _S_). Skipping.")
-
-    if len(X) == 0:
-        logging.error("No valid data found in the directory. Ensure the files are correctly formatted and not empty.")
-        raise ValueError("No valid data found in the directory.")
-
-    return np.array(X), np.array(y)
-
-def train_model(data_dir):
-    X, y = load_csv_files(data_dir)
-
-    # Log dataset size
-    logging.info(f"Training dataset size: {len(X)} samples")
-
-    clf = make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=3))
-    clf.fit(X, y)
-
-    # Log model training completion
-    logging.info("Model training completed. Saving model...")
-
-    joblib.dump(clf, MODEL_PATH)
-    logging.info(f"Model saved to {MODEL_PATH}")
-
-def load_model_and_predict(feature_dict):
-    clf = joblib.load(MODEL_PATH)
-    x_input = np.array([list(feature_dict.values())]).reshape(1, -1)
-    prediction = clf.predict(x_input)[0]
-    label_map = {0: "walk", 1: "run", 2: "stair up"}
-    return label_map[prediction]
+if __name__ == '__main__':
+    main()

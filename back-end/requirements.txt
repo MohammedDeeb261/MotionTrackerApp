@@ -5,4 +5,7 @@ gunicorn
 joblib
 flask-blueprint
 matplotlib
-scikit-learn==1.4.2
+tensorflow
+numpy
+pandas
+scikit-learn

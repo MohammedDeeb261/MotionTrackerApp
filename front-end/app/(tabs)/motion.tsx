@@ -1,54 +1,68 @@
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import axios from 'axios';
 
 type SensorSample = { x: number; y: number; z: number };
 
-export default function MotionScreen() {
-  const [prediction, setPrediction] = useState<string>("");
-  const [sampleCount, setSampleCount] = useState<number>(0);
+const API_URL = 'https://motiontrackerapp.onrender.com/predict';
+const WINDOW_SIZE = 100; // 1 second at 100Hz
+const OVERLAP = 0.5; // 50% overlap
 
-  // Buffers to collect data for 1 second
-  const accBuffer: SensorSample[] = [];
-  const gyroBuffer: SensorSample[] = [];
+export default function MotionScreen() {
+  const [accel, setAccel] = useState<SensorSample>({ x: 0, y: 0, z: 0 });
+  const [gyro, setGyro] = useState<SensorSample>({ x: 0, y: 0, z: 0 });
+  const [prediction, setPrediction] = useState<string>('');
+  const [error, setError] = useState<string>('');
+  const bufferRef = React.useRef<{acc: SensorSample[], gyro: SensorSample[]}>({ acc: [], gyro: [] });
+  const collectingRef = React.useRef<boolean>(true);
 
   useEffect(() => {
-    // 🔄 Set the sampling rate to 10 Hz (10 samples per second)
-    Accelerometer.setUpdateInterval(100); // 10 Hz
-    Gyroscope.setUpdateInterval(100);    // 10 Hz
+    Accelerometer.setUpdateInterval(10); // 100Hz
+    Gyroscope.setUpdateInterval(10);    // 100Hz
 
-    // Collect data in buffers
-    const accSub = Accelerometer.addListener((data) => accBuffer.push(data));
-    const gyroSub = Gyroscope.addListener((data) => gyroBuffer.push(data));
+    const accSub = Accelerometer.addListener((data) => {
+      setAccel(data);
+      if (collectingRef.current) bufferRef.current.acc.push(data);
+    });
+    const gyroSub = Gyroscope.addListener((data) => {
+      setGyro(data);
+      if (collectingRef.current) bufferRef.current.gyro.push(data);
+    });
 
-    // Send every 1 second (1000 ms)
-    const interval = setInterval(async () => {
-      if (accBuffer.length < 10 || gyroBuffer.length < 10) {
-        console.warn("Not enough samples collected, skipping this window.");
-        return;
+    // Main windowing and sending loop
+    const interval = setInterval(() => {
+      const accBuf = bufferRef.current.acc;
+      const gyroBuf = bufferRef.current.gyro;
+      // Only process if enough samples for a window
+      while (accBuf.length >= WINDOW_SIZE && gyroBuf.length >= WINDOW_SIZE) {
+        // Merge by index, shape: [ [accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z], ... ]
+        const window: number[][] = [];
+        for (let i = 0; i < WINDOW_SIZE; i++) {
+          const a = accBuf[i];
+          const g = gyroBuf[i];
+          window.push([
+            a?.x ?? 0, a?.y ?? 0, a?.z ?? 0,
+            g?.x ?? 0, g?.y ?? 0, g?.z ?? 0
+          ]);
+        }
+        // Send to backend
+        fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ window })
+        })
+          .then(res => res.json())
+          .then(data => {
+            if (data.prediction) setPrediction(data.prediction);
+            else setError(data.error || 'No prediction');
+          })
+          .catch(e => setError('Network error: ' + e));
+        // Remove first WINDOW_SIZE * (1-OVERLAP) samples for 50% overlap
+        const step = Math.floor(WINDOW_SIZE * (1 - OVERLAP));
+        accBuf.splice(0, step);
+        gyroBuf.splice(0, step);
       }
-
-      // Display the number of samples collected
-      setSampleCount(accBuffer.length);
-
-      // Prepare the payload
-      const rawData = {
-        accelerometer: accBuffer,
-        gyroscope: gyroBuffer,
-      };
-
-      try {
-        const response = await axios.post('https://motiontrackerapp.onrender.com/predict', rawData);
-        setPrediction(response.data.prediction);
-      } catch (error) {
-        console.error('Error calling /predict:', error);
-      }
-
-      // Clear the buffers
-      accBuffer.length = 0;
-      gyroBuffer.length = 0;
-    }, 1000); // Send every 1 second
+    }, 100); // Check every 100ms
 
     return () => {
       accSub.remove();
@@ -59,16 +73,32 @@ export default function MotionScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.header}>Motion Feature Summary</Text>
-      <Text style={styles.subheader}>Samples per second: {sampleCount}</Text>
-      <Text style={styles.prediction}>Prediction: {prediction}</Text>
+      <Text style={styles.header}>Live Sensor Data</Text>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Accelerometer</Text>
+        <Text style={styles.text}>{`x: ${accel.x.toFixed(4)}`}</Text>
+        <Text style={styles.text}>{`y: ${accel.y.toFixed(4)}`}</Text>
+        <Text style={styles.text}>{`z: ${accel.z.toFixed(4)}`}</Text>
+      </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Gyroscope</Text>
+        <Text style={styles.text}>{`x: ${gyro.x.toFixed(4)}`}</Text>
+        <Text style={styles.text}>{`y: ${gyro.y.toFixed(4)}`}</Text>
+        <Text style={styles.text}>{`z: ${gyro.z.toFixed(4)}`}</Text>
+      </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Prediction</Text>
+        <Text style={styles.text}>{prediction ? prediction : 'Waiting for prediction...'}</Text>
+        {error ? <Text style={[styles.text, {color: 'red'}]}>{error}</Text> : null}
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { padding: 16 },
-  header: { fontSize: 22, fontWeight: "bold", textAlign: "center", marginBottom: 20 },
-  subheader: { fontSize: 16, fontWeight: "500", textAlign: "center", marginBottom: 10 },
-  prediction: { fontSize: 16, fontWeight: "500", textAlign: "center", marginTop: 20, color: "#555" },
+  header: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
+  section: { marginBottom: 20 },
+  sectionTitle: { fontSize: 18, fontWeight: '600', marginBottom: 8, color: '#333' },
+  text: { fontSize: 15, marginVertical: 2 },
 });

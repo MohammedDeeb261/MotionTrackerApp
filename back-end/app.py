@@ -1,56 +1,41 @@
 from flask import Flask, request, jsonify
-from train_model import train_model, extract_features
-import os
-import pandas as pd
+from flask_cors import CORS
 import numpy as np
-import joblib
-import logging  # Add logging for debugging
-import matplotlib.pyplot as plt
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+import pandas as pd
+from tensorflow.keras.models import load_model
 
 app = Flask(__name__)
+CORS(app)
 
-MODEL_PATH = "svm_model.pkl"
-TRAIN_FOLDER = "training_windows"
+MODEL_PATH = 'cnn_motion_model.h5'
+CLASSES = ['walk', 'stand', 'run']
+WINDOW_SIZE = 100
+N_CHANNELS = 6
 
-# Moved route definitions to separate files in the `routes` folder
-from routes.test_routes import test_routes
-from routes.evaluate_routes import evaluate_routes
+model = load_model(MODEL_PATH)
 
-# Register blueprints for routes
-app.register_blueprint(test_routes, url_prefix='/test')
-app.register_blueprint(evaluate_routes, url_prefix='/evaluate')
-
-# Predict endpoint
-@app.route("/predict", methods=["POST"])
+@app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
+    if not data or 'window' not in data:
+        return jsonify({'error': 'Missing window data'}), 400
+    window = data['window']
+    # window should be a list of 100 samples, each sample is a list of 6 values
     try:
-        # Extract raw accelerometer and gyroscope data from the request
-        acc_data = data.get("accelerometer", [])
-        gyro_data = data.get("gyroscope", [])
-
-        # Extract features using the new function
-        from utils.feature_extraction import extract_features_from_raw_data
-        features = extract_features_from_raw_data(acc_data, gyro_data)
-
-        clf = joblib.load(MODEL_PATH)
-        prediction = clf.predict([features])[0]
-        label_map = {0: "walk", 1: "run", 2: "stair up"}
-        return jsonify({"prediction": label_map[prediction]})
+        arr = np.array(window)
+        if arr.shape != (WINDOW_SIZE, N_CHANNELS):
+            return jsonify({'error': f'Input shape must be (100, 6), got {arr.shape}'}), 400
+        arr = arr.reshape(1, WINDOW_SIZE, N_CHANNELS)
+        pred = model.predict(arr)
+        pred_class = int(np.argmax(pred))
+        pred_label = CLASSES[pred_class]
+        return jsonify({'prediction': pred_label, 'probabilities': pred[0].tolist()})
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({'error': str(e)}), 500
 
-# Train endpoint
-@app.route("/train", methods=["POST"])
-def train():
-    try:
-        train_model(TRAIN_FOLDER)
-        return jsonify({"status": "Model trained and saved"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+@app.route('/')
+def index():
+    return 'Motion CNN API is running.'
 
-if __name__ == "__main__":
-    app.run(debug=True)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
