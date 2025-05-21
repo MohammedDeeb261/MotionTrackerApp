@@ -3,11 +3,13 @@ import pandas as pd
 
 INPUT_ROOT = 'data/all_data_1sec'
 OUTPUT_ROOT = 'data/all_data_overlap'
-CLASSES = ['walk', 'stand', 'run']
 WINDOW_SIZE = 100
 STEP_SIZE = 50  # 50% overlap: 100 - 50 = 50
 
 os.makedirs(OUTPUT_ROOT, exist_ok=True)
+
+# Dynamically get all activity class folders
+CLASSES = [d for d in os.listdir(INPUT_ROOT) if os.path.isdir(os.path.join(INPUT_ROOT, d))]
 
 def process_class(class_name):
     input_class_dir = os.path.join(INPUT_ROOT, class_name)

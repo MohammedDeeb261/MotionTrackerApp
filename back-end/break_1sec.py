@@ -3,10 +3,12 @@ import pandas as pd
 
 INPUT_ROOT = 'data/all_data'
 OUTPUT_ROOT = 'data/all_data_1sec'
-CLASSES = ['walk', 'stand', 'run']
 SAMPLES_PER_SECOND = 100
 
 os.makedirs(OUTPUT_ROOT, exist_ok=True)
+
+# Dynamically get all activity class folders
+CLASSES = [d for d in os.listdir(INPUT_ROOT) if os.path.isdir(os.path.join(INPUT_ROOT, d))]
 
 for class_name in CLASSES:
     input_class_dir = os.path.join(INPUT_ROOT, class_name)

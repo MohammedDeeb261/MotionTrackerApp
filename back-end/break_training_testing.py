@@ -5,11 +5,13 @@ import random
 INPUT_ROOT = 'data/all_data_overlap'
 TRAIN_ROOT = 'data/train'
 TEST_ROOT = 'data/test'
-CLASSES = ['walk', 'stand', 'run']
 TRAIN_RATIO = 0.75
 
 os.makedirs(TRAIN_ROOT, exist_ok=True)
 os.makedirs(TEST_ROOT, exist_ok=True)
+
+# Dynamically get all activity class folders
+CLASSES = [d for d in os.listdir(INPUT_ROOT) if os.path.isdir(os.path.join(INPUT_ROOT, d))]
 
 for class_name in CLASSES:
     input_class_dir = os.path.join(INPUT_ROOT, class_name)

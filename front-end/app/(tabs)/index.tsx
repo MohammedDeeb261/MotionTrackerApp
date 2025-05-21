@@ -5,8 +5,19 @@ import { HelloWave } from '@/components/HelloWave';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { useAuth } from '@/context/AuthContext';
+import { useEffect, useState } from 'react';
 
 export default function HomeScreen() {
+  const { user } = useAuth();
+  const [greeting, setGreeting] = useState('Welcome!');
+
+  useEffect(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) setGreeting('Good Morning!');
+    else if (hour < 18) setGreeting('Good Afternoon!');
+    else setGreeting('Good Evening!');
+  }, []);
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
@@ -17,38 +28,32 @@ export default function HomeScreen() {
         />
       }>
       <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
+        <ThemedText type="title">{greeting}</ThemedText>
         <HelloWave />
       </ThemedView>
+      <ThemedView style={styles.userContainer}>
+        <ThemedText type="subtitle">{user?.email}</ThemedText>
+        <ThemedText>Welcome to the Motion Tracker App</ThemedText>
+      </ThemedView>
       <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
+        <ThemedText type="subtitle">Motion Tracking</ThemedText>
         <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
+          Tap the <ThemedText type="defaultSemiBold">Motion</ThemedText> tab to start tracking your movements. 
+          The app uses your device's accelerometer and gyroscope to determine your activity.
         </ThemedText>
       </ThemedView>
       <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
+        <ThemedText type="subtitle">Activity Tracking</ThemedText>
         <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
+          Your activities are automatically tracked and classified using machine learning.
+          The model can recognize walking, running, and stationary states with high accuracy.
         </ThemedText>
       </ThemedView>
       <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
+        <ThemedText type="subtitle">Your Profile</ThemedText>
         <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
+          Visit the <ThemedText type="defaultSemiBold">Profile</ThemedText> tab to view your activity statistics 
+          and manage your account. You can track your progress over time and see how your activity levels change.
         </ThemedText>
       </ThemedView>
     </ParallaxScrollView>
@@ -60,6 +65,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  userContainer: {
+    gap: 8,
+    marginBottom: 20,
+    marginTop: 10,
   },
   stepContainer: {
     gap: 8,

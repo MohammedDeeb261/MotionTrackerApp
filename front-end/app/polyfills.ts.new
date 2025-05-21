@@ -1,0 +1,68 @@
+// Import necessary polyfills for React Native
+import 'react-native-url-polyfill/auto';
+import { Buffer } from 'buffer';
+import { TextEncoder, TextDecoder } from 'text-encoding';
+
+// Use require instead of import for problematic modules
+const process = require('process');
+const util = require('util/');
+const path = require('path-browserify');
+const assert = require('assert');
+const events = require('events');
+
+// Type definitions for the global object
+interface CustomGlobal {
+  process: any;
+  Buffer: typeof Buffer;
+  crypto: any;
+  stream: any;
+  URL: any;
+  util: any;
+  path: any;
+  assert: any;
+  events: any;
+  net: any;
+  navigator: {
+    product: string;
+    [key: string]: any;
+  };
+  Blob: any;
+  TextEncoder: typeof TextEncoder;
+  TextDecoder: typeof TextDecoder;
+}
+
+// Cast global to our custom interface
+const globalWithPolyfills = global as unknown as CustomGlobal;
+
+// Ensure all necessary polyfills are available globally
+globalWithPolyfills.process = globalWithPolyfills.process || process;
+globalWithPolyfills.Buffer = globalWithPolyfills.Buffer || Buffer;
+
+// Add additional Node.js polyfills needed for Supabase
+globalWithPolyfills.crypto = globalWithPolyfills.crypto || require('crypto-browserify');
+globalWithPolyfills.stream = globalWithPolyfills.stream || require('stream-browserify');
+globalWithPolyfills.URL = globalWithPolyfills.URL || require('react-native-url-polyfill').URL;
+globalWithPolyfills.util = globalWithPolyfills.util || util;
+globalWithPolyfills.path = globalWithPolyfills.path || path;
+globalWithPolyfills.assert = globalWithPolyfills.assert || assert;
+globalWithPolyfills.events = globalWithPolyfills.events || events;
+globalWithPolyfills.net = globalWithPolyfills.net || require('whatwg-url/node_modules/tr46');
+
+// Explicitly set this to prevent Supabase issues
+Object.defineProperty(globalWithPolyfills, 'navigator', {
+  value: {
+    ...(globalWithPolyfills.navigator || {}),
+    product: 'ReactNative',
+  },
+});
+
+// Fix for Blob and File which Supabase might use
+if (typeof globalWithPolyfills.Blob === 'undefined') {
+  globalWithPolyfills.Blob = require('react-native').Blob;
+}
+
+// Fix for TextEncoder/TextDecoder if not available
+if (typeof globalWithPolyfills.TextEncoder === 'undefined') {
+  globalWithPolyfills.TextEncoder = TextEncoder;
+  globalWithPolyfills.TextDecoder = TextDecoder;
+}
