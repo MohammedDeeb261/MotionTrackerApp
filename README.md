@@ -24,6 +24,13 @@ A mobile application that uses device sensors to detect and classify motion acti
 - Track activity trends over time
 - Analyzes activity patterns
 
+### Activity Goals
+- Set daily, weekly, and regular goals for specific activities
+- Track goal progress in real-time
+- Visualize completion percentage with progress bars
+- Record completion times for achieved goals
+- Support for multiple concurrent goals
+
 ### Data Storage and Privacy
 - Secure user authentication
 - Row-level security for user data
@@ -57,6 +64,7 @@ A mobile application that uses device sensors to detect and classify motion acti
 2. Install dependencies: `npm install`
 3. Set up Supabase tables using the `supabase_setup.sql` file
 4. Configure Supabase API keys
-5. Start the app: `npm start`
+5. Set up the goals table using the `setup-goals-table.sh` script
+6. Start the app: `npm start`
 
 See [SUPABASE_DOCS.md](./SUPABASE_DOCS.md) for detailed Supabase setup instructions.

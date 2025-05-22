@@ -10,6 +10,7 @@ import { ActivityIndicator, View } from 'react-native';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { GoalsProvider } from '@/context/GoalsContext';
 
 // Navigation component that handles protected routes
 function RootLayoutNav() {

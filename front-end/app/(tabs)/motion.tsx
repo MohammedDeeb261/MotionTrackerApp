@@ -17,6 +17,7 @@ const API_URL = 'http://192.168.1.239:5000/predict';
 const WINDOW_SIZE = 100; // 1 second at 100Hz
 const OVERLAP = 0.5; // 50% overlap
 const ACTIVITY_STORAGE_KEY = 'motiontracker_activity_durations';
+const GOALS_UPDATE_KEY = 'motiontracker_last_goals_update';
 
 export default function MotionScreen() {
   const [accel, setAccel] = useState<SensorSample>({ x: 0, y: 0, z: 0 });
@@ -176,6 +177,9 @@ export default function MotionScreen() {
                   baseDuration: totalDurationsRef.current[currentActivity]
                 }));
                 
+                // Update any active goals that match this activity
+                updateActiveGoals(currentActivity, bonusTime);
+                
                 console.log(`Added ${bonusTime}s bonus to ${currentActivity}, total now: ${totalDurationsRef.current[currentActivity]}s`);
               }
               
@@ -200,6 +204,9 @@ export default function MotionScreen() {
                       ACTIVITY_STORAGE_KEY, 
                       JSON.stringify(totalDurationsRef.current)
                     );
+                    
+                    // Update any active goals that match this activity
+                    updateActiveGoals(prevActivity, duration);
                     
                     // Note: We no longer save individual activity updates to Supabase here
                     // since we're batching all updates every 5 seconds
@@ -255,6 +262,9 @@ export default function MotionScreen() {
           // Update the duration in our tracking ref without resetting the activity
           // Ensure we're storing integers to avoid database type errors
           totalDurationsRef.current[activity] = Math.floor(prevDuration + elapsedSeconds);
+          
+          // Update any active goals that match this activity
+          updateActiveGoals(activity, elapsedSeconds);
           
           // Reset the timer for the current activity
           activityStartTimeRef.current = currentTime;
@@ -1021,10 +1031,126 @@ export default function MotionScreen() {
     return `${Math.min(100, (seconds / totalActivityTime) * 100)}%`;
   };
   
-  // Helper function to convert percentage string to style object
+  // Helper function to convert percentage to style object
   const getProgressBarStyle = (seconds: number) => {
-    return { width: getActivityPercentage(seconds) };
+    // For React Native we need a percentage string like '50%'
+    if (!totalActivityTime) return { width: '0%' };
+    const percentage = Math.min(100, (seconds / totalActivityTime) * 100);
+    return { width: `${percentage}%` };
   };
+  
+  // Known activity types and their corresponding goal types
+const ACTIVITY_TO_GOAL_MAP = {
+  'Walk': 'Walk',
+  'Run': 'Run',
+  'Cycling': 'Cycling',
+  'Stairs': 'Stairs',
+  'Jumping': 'Jumping',
+  'Dancing': 'Dancing',
+  'Still': null, // 'Still' activity doesn't contribute to any goals
+};
+
+// Function to update active goals based on detected activity
+const updateActiveGoals = async (activity: string, durationSeconds: number) => {
+  if (!user || !activity || durationSeconds <= 0) return;
+  
+  try {
+    // Skip "Still" activity as it doesn't contribute to goals
+    if (activity === 'Still') return;
+    
+    console.log(`Checking for goals that match activity: ${activity} with duration ${durationSeconds}s`);
+    
+    // Get the current date info for different goal types
+    const now = new Date();
+    const todayDate = now.toISOString().split('T')[0];
+    
+    // Check if we've updated goals recently (to avoid excessive database calls)
+    const lastUpdateString = await AsyncStorage.getItem(GOALS_UPDATE_KEY);
+    const lastUpdate = lastUpdateString ? parseInt(lastUpdateString) : 0;
+    const timeSinceLastUpdate = Date.now() - lastUpdate;
+    
+    // Only update goals at most once every minute
+    if (timeSinceLastUpdate < 60000) {
+      console.log('Skipping goal update - updated less than a minute ago');
+      return;
+    }
+    
+    // Fetch active goals from Supabase
+    const { data: activeGoals, error } = await supabase
+      .from('user_activity_goals')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('status', 'active');
+      
+    if (error) {
+      console.error('Error fetching active goals:', error);
+      return;
+    }
+    
+    if (!activeGoals || activeGoals.length === 0) {
+      console.log('No active goals found for the user');
+      return;
+    }
+    
+    console.log(`Found ${activeGoals.length} active goals for user`);
+    
+    // Convert seconds to milliseconds for goal comparison
+    const durationMs = durationSeconds * 1000;
+    const goalUpdates = [];
+    
+    // Check each active goal to see if it matches the current activity
+    for (const goal of activeGoals) {
+      let matchesActivity = false;
+      
+      // Check if this activity contributes to this goal
+      if (goal.activity_type === activity) {
+        matchesActivity = true;
+      }
+      // Special case for combined "Run & Walk" goals
+      else if (goal.activity_type === 'Run & Walk' && (activity === 'Run' || activity === 'Walk')) {
+        matchesActivity = true;
+      }
+      
+      if (!matchesActivity) continue;
+      
+      // If we found a matching goal, update its progress
+      console.log(`Updating goal "${goal.title}" (${goal.goal_type}) with ${durationMs}ms of activity`);
+      
+      // Calculate the new duration
+      const newDuration = goal.current_duration_ms + durationMs;
+      const isCompleted = newDuration >= goal.target_duration_ms;
+      
+      // Add to the update queue
+      goalUpdates.push(
+        supabase
+          .from('user_activity_goals')
+          .update({
+            current_duration_ms: newDuration,
+            is_completed: isCompleted,
+            status: isCompleted ? 'completed' : 'active',
+            completion_date: isCompleted ? todayDate : null
+          })
+          .eq('id', goal.id)
+      );
+    }
+    
+    // Execute all updates in parallel
+    if (goalUpdates.length > 0) {
+      console.log(`Executing ${goalUpdates.length} goal updates`);
+      await Promise.all(goalUpdates);
+      console.log('Goal updates completed successfully');
+      
+      // Show a notification if any goals were updated
+      // We would add this in a production app to notify users about goal progress
+    }
+    
+    // Update the last update timestamp
+    await AsyncStorage.setItem(GOALS_UPDATE_KEY, Date.now().toString());
+    
+  } catch (error) {
+    console.error('Error updating active goals:', error);
+  }
+};
   
   return (
     <ParallaxScrollView
