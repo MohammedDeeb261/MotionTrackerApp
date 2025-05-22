@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="150" viewBox="0 0 310 150">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A1CEDC" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#A1CEDC" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <rect width="310" height="150" fill="url(#gradient)" />
+  <circle cx="155" cy="60" r="30" fill="#6EAEC7" />
+  <path d="M155,100 C115,100 95,120 95,150 L215,150 C215,120 195,100 155,100 Z" fill="#6EAEC7" />
+  <path d="M135,60 A20,20 0 0 1 175,60" fill="none" stroke="white" stroke-width="3" />
+  <text x="155" y="25" font-family="Arial" font-size="16" text-anchor="middle" fill="#2D7A9C">User Profile</text>
+</svg>

@@ -5,7 +5,6 @@ import { ThemedView } from '@/components/ThemedView';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '../../services/supabase';
-import { Image } from 'expo-image';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
@@ -292,47 +291,47 @@ export default function GoalsScreen() {
           
           // Handle combined "Run & Walk" goals differently
           if (goal.activity_type === 'Run & Walk') {
-            // Query the raw activity data for both Walk and Run
+            // Query the activity_daily table for both Walk and Run
             const { data: walkData, error: walkError } = await supabase
-              .from('user_activity_durations')
-              .select('duration_ms')
+              .from('activity_daily')
+              .select('activity_type, total_duration_seconds')
               .eq('user_id', user.id)
               .eq('activity_type', 'Walk')
-              .gte('start_time', startDate);
+              .gte('date', startDate);
               
             const { data: runData, error: runError } = await supabase
-              .from('user_activity_durations')
-              .select('duration_ms')
+              .from('activity_daily')
+              .select('activity_type, total_duration_seconds') 
               .eq('user_id', user.id)
               .eq('activity_type', 'Run')
-              .gte('start_time', startDate);
+              .gte('date', startDate);
               
             if (walkError) {
-              console.error('Error fetching Walk activity duration data:', walkError);
+              console.error(`Error fetching Walk activity data: ${walkError?.message || 'Unknown error'}`);
             }
             if (runError) {
-              console.error('Error fetching Run activity duration data:', runError);
+              console.error(`Error fetching Run activity data: ${runError?.message || 'Unknown error'}`);
             }
             
-            // Sum up durations from both activity types
-            const walkDurationMs = walkData ? walkData.reduce((sum, record) => sum + record.duration_ms, 0) : 0;
-            const runDurationMs = runData ? runData.reduce((sum, record) => sum + record.duration_ms, 0) : 0;
+            // Sum up durations from both activity types (convert seconds to milliseconds)
+            const walkDurationMs = walkData ? walkData.reduce((sum, record) => sum + (record.total_duration_seconds * 1000), 0) : 0;
+            const runDurationMs = runData ? runData.reduce((sum, record) => sum + (record.total_duration_seconds * 1000), 0) : 0;
             
             totalDurationMs = walkDurationMs + runDurationMs;
           } else {
             // For single activity type goals
             const { data: activityData, error: activityError } = await supabase
-              .from('user_activity_durations')
-              .select('duration_ms')
+              .from('activity_daily')
+              .select('activity_type, total_duration_seconds')
               .eq('user_id', user.id)
               .eq('activity_type', goal.activity_type)
-              .gte('start_time', startDate);
+              .gte('date', startDate);
               
             if (activityError) {
-              console.error('Error fetching activity duration data:', activityError);
+              console.error(`Error fetching activity data: ${activityError?.message || 'Unknown error'}`);
             } else if (activityData) {
-              // Calculate total duration
-              totalDurationMs = activityData.reduce((sum, record) => sum + record.duration_ms, 0);
+              // Calculate total duration in milliseconds
+              totalDurationMs = activityData.reduce((sum, record) => sum + (record.total_duration_seconds * 1000), 0);
             }
           }
           
@@ -379,12 +378,29 @@ export default function GoalsScreen() {
         return;
       }
       
-      // Parse current activity data
-      const { activity, startTime } = JSON.parse(currentActivityData);
+      // Parse current activity data with enhanced fields
+      const activityInfo = JSON.parse(currentActivityData);
+      const { activity, startTime, baseDuration, currentTotalDuration, lastUpdated } = activityInfo;
+      
+      // Log detailed activity info for debugging
+      if (__DEV__) {
+        const now = Date.now();
+        const age = lastUpdated ? now - lastUpdated : 'unknown';
+        console.log(
+          `[GOALS DEBUG] ${activity} - ` +
+          `Base: ${baseDuration}s, ` +
+          `Current: ${currentTotalDuration}s, ` + 
+          `Data age: ${age}ms, ` +
+          `StartTime: ${new Date(startTime).toISOString()}, ` +
+          `Last update: ${lastUpdated ? new Date(lastUpdated).toISOString() : 'unknown'}`
+        );
+      }
       
       // Only update current activity if it has changed
       if (currentActivity !== activity) {
         setCurrentActivity(activity);
+        // Log activity change
+        console.log(`Goals: Current activity changed to ${activity}`);
       }
       
       // Toggle blink indicator for visual feedback of active tracking
@@ -400,16 +416,72 @@ export default function GoalsScreen() {
         );
         
         if (affectedGoals.length > 0) {
-          // Calculate exact elapsed time since activity started
-          const currentTime = Date.now();
-          const elapsedMs = currentTime - startTime;
+          // Calculate the current elapsed duration in milliseconds
+          let totalDurationMs;
+          const now = Date.now();
+          
+          // First priority: use currentTotalDuration if it's recent (last 2 seconds)
+          if (currentTotalDuration !== undefined && lastUpdated && (now - lastUpdated) < 2000) {
+            // Convert seconds to milliseconds
+            totalDurationMs = currentTotalDuration * 1000;
+            console.log(`Goals: Using fresh pre-calculated duration: ${currentTotalDuration}s (${(now - lastUpdated)}ms old)`);
+          } 
+          // Second priority: calculate total from base + elapsed
+          else {
+            // Calculate elapsed time since activity started
+            const elapsedMs = now - startTime;
+            totalDurationMs = (baseDuration * 1000) + elapsedMs;
+            console.log(`Goals: Calculated duration manually: base ${baseDuration * 1000}ms + elapsed ${elapsedMs}ms = ${totalDurationMs}ms`);
+          }
           
           // Create a completely new updates object each time
           const updates: {[goalId: string]: number} = {};
           
           affectedGoals.forEach(goal => {
-            // Always calculate from base DB value to avoid accumulation issues
-            updates[goal.id] = goal.current_duration_ms + elapsedMs;
+            // For each affected goal, calculate the portion of the activity that counts toward the goal
+            const baseGoalDuration = goal.current_duration_ms;
+            
+            // Calculate the appropriate portion of the activity to add to this goal
+            let goalUpdateDuration;
+            
+            if (goal.activity_type === activity) {
+              // Direct match: use the full duration
+              goalUpdateDuration = totalDurationMs;
+              
+              // For standard goals (exact activity match), we use the full activity duration
+              // This shows the total time spent on this activity
+              updates[goal.id] = totalDurationMs;
+              
+              console.log(`Goals: Direct match - Updating ${goal.activity_type} goal (${goal.title}) to ${totalDurationMs}ms`);
+            } 
+            else if (goal.activity_type === 'Run & Walk' && (activity === 'Run' || activity === 'Walk')) {
+              // For combined goals, we need to be more careful to avoid double-counting
+              // Instead of using the full activity duration, we'll use the current goal's base duration
+              // plus the incremental progress since the last update
+              
+              // First check if we have recent pre-calculated duration from motion.tsx
+              if (currentTotalDuration !== undefined && lastUpdated && (now - lastUpdated) < 2000) {
+                // For combined goal types, we want to add the incremental progress only
+                const incrementalProgress = (currentTotalDuration - baseDuration) * 1000; // converted to ms
+                
+                // Add the incremental progress to the goal's base duration
+                updates[goal.id] = baseGoalDuration + incrementalProgress;
+                
+                console.log(`Goals: Combined goal (using pre-calculated) - ${goal.activity_type} goal (${goal.title}) - ` +
+                  `base goal: ${baseGoalDuration}ms, incremental: ${incrementalProgress}ms, total: ${updates[goal.id]}ms`);
+              } else {
+                // Calculate elapsed time manually
+                const rawElapsedMs = now - startTime;
+                
+                // Add the raw elapsed time to the goal's base duration
+                updates[goal.id] = baseGoalDuration + rawElapsedMs;
+                
+                console.log(`Goals: Combined goal (using manual calc) - ${goal.activity_type} goal (${goal.title}) - ` +
+                  `base goal: ${baseGoalDuration}ms, elapsed: ${rawElapsedMs}ms, total: ${updates[goal.id]}ms`);
+              }
+              
+              console.log(`Goals: Combined goal - Updating ${goal.activity_type} goal (${goal.title}) - base: ${baseGoalDuration}ms, total: ${updates[goal.id]}ms`);
+            }
           });
           
           // Force update on every interval tick to ensure continuous updates
@@ -1006,13 +1078,7 @@ export default function GoalsScreen() {
   
   return (
     <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A0D995', dark: '#1F432A' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.headerImage}
-        />
-      }>
+      headerBackgroundColor={{ light: '#A0D995', dark: '#1F432A' }}>
       <ThemedView style={styles.container}>
         <ThemedText type="title">Activity Goals</ThemedText>
         {loading ? (
@@ -1068,11 +1134,6 @@ export default function GoalsScreen() {
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    width: '100%',
-    height: '100%',
-    opacity: 0.7,
-  },
   container: {
     flex: 1,
     paddingHorizontal: 16,

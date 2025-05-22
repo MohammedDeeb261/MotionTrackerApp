@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '../../services/supabase';
-import { Image } from 'expo-image';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Define type for time period selection
 type TimePeriod = 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -23,6 +23,106 @@ export default function ActivityCenterScreen() {
   const [activityStats, setActivityStats] = useState<ActivityStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentActivity, setCurrentActivity] = useState<string | null>(null);
+  const [blinkIndicator, setBlinkIndicator] = useState<boolean>(true);
+  
+  // Reference for the update interval
+  const updateIntervalRef = React.useRef<NodeJS.Timeout | null>(null);
+  
+  // Effect for real-time updates of activity durations
+  useEffect(() => {
+    // Function to update UI with current activity duration
+    const updateCurrentActivityDuration = async () => {
+      try {
+        // Get current activity from AsyncStorage
+        const currentActivityData = await AsyncStorage.getItem('motiontracker_current_activity');
+        
+        if (!currentActivityData) {
+          if (currentActivity !== null) {
+            setCurrentActivity(null);
+          }
+          return;
+        }
+        
+        // Parse current activity data with enhanced fields
+        const activityInfo = JSON.parse(currentActivityData);
+        const { activity, startTime, baseDuration, currentTotalDuration, lastUpdated } = activityInfo;
+        
+        // Log detailed activity info for debugging
+        if (__DEV__) {
+          const now = Date.now();
+          const age = lastUpdated ? now - lastUpdated : 'unknown';
+          console.log(
+            `[ACTIVITY-CENTER DEBUG] ${activity} - ` +
+            `Base: ${baseDuration}s, ` +
+            `Current: ${currentTotalDuration}s, ` + 
+            `Data age: ${age}ms, ` +
+            `StartTime: ${new Date(startTime).toISOString()}, ` +
+            `Last update: ${lastUpdated ? new Date(lastUpdated).toISOString() : 'unknown'}`
+          );
+        }
+        
+        // Update current activity state if changed
+        if (currentActivity !== activity) {
+          setCurrentActivity(activity);
+          console.log(`ActivityCenter: Current activity changed to ${activity}`);
+        }
+        
+        // Toggle blink indicator for visual feedback
+        setBlinkIndicator(prev => !prev);
+        
+        // Determine the most accurate duration
+        let totalDuration;
+        const now = Date.now();
+        
+        if (currentTotalDuration !== undefined && lastUpdated && (now - lastUpdated) < 2000) {
+          // Use pre-calculated duration if it's recent enough
+          totalDuration = currentTotalDuration;
+          console.log(`ActivityCenter: Using pre-calculated duration: ${totalDuration}s (${now - lastUpdated}ms old)`);
+        } else {
+          // Calculate elapsed time and add to base duration
+          const elapsedSeconds = Math.floor((now - startTime) / 1000);
+          totalDuration = baseDuration + elapsedSeconds;
+          console.log(`ActivityCenter: Calculated duration: base ${baseDuration}s + elapsed ${elapsedSeconds}s = ${totalDuration}s`);
+        }
+        
+        // Update the activity stats with current duration
+        setActivityStats(prevStats => {
+          // Create a copy of the stats array
+          const updatedStats = [...prevStats];
+          
+          // Find and update the current activity if it exists in the list
+          const activityIndex = updatedStats.findIndex(stat => stat.activity_type === activity);
+          if (activityIndex !== -1) {
+            updatedStats[activityIndex] = {
+              ...updatedStats[activityIndex],
+              total_duration_seconds: totalDuration
+            };
+            
+            console.log(`ActivityCenter: Updated ${activity} duration to ${totalDuration}s`);
+          }
+          
+          return updatedStats;
+        });
+      } catch (error) {
+        console.error('Error updating current activity duration:', error);
+      }
+    };
+    
+    // Set up interval for UI updates (every 1 second)
+    updateIntervalRef.current = setInterval(updateCurrentActivityDuration, 1000) as unknown as NodeJS.Timeout;
+    
+    // Call once immediately
+    updateCurrentActivityDuration();
+    
+    // Cleanup on unmount
+    return () => {
+      if (updateIntervalRef.current) {
+        clearInterval(updateIntervalRef.current);
+        updateIntervalRef.current = null;
+      }
+    };
+  }, [currentActivity]);
   
   // Format duration from seconds to readable time
   const formatDuration = (seconds: number): string => {
@@ -325,13 +425,7 @@ export default function ActivityCenterScreen() {
   
   return (
     <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.headerImage}
-        />
-      }>
+      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}>
       <ThemedView style={styles.container}>
         <ThemedText type="title">Activity Center</ThemedText>
         
@@ -500,14 +594,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
-  },
-  headerImage: {
-    height: 100,
-    width: 160,
-    bottom: -30,
-    right: -20,
-    position: 'absolute',
-    opacity: 0.6,
   },
   timePeriodSelector: {
     flexDirection: 'row',

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="150" viewBox="0 0 310 150">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A0D995" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#A0D995" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <rect width="310" height="150" fill="url(#gradient)" />
+  <path d="M85,110 L225,110" stroke="#5DAE4F" stroke-width="3" fill="none" />
+  <path d="M85,110 L85,60 L125,60 L125,110" stroke="#5DAE4F" stroke-width="3" fill="none" />
+  <path d="M135,110 L135,80 L175,80 L175,110" stroke="#5DAE4F" stroke-width="3" fill="none" />
+  <path d="M185,110 L185,40 L225,40 L225,110" stroke="#5DAE4F" stroke-width="3" fill="none" />
+  <path d="M225,40 L185,60" stroke="#5DAE4F" stroke-width="2" fill="none" />
+  <path d="M85,60 L125,80" stroke="#5DAE4F" stroke-width="2" fill="none" />
+  <path d="M135,80 L175,60" stroke="#5DAE4F" stroke-width="2" fill="none" />
+  <text x="155" y="25" font-family="Arial" font-size="16" text-anchor="middle" fill="#3D7930">Goal Tracking</text>
+</svg>

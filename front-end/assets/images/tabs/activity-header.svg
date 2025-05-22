@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="150" viewBox="0 0 310 150">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A1CEDC" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#A1CEDC" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <rect width="310" height="150" fill="url(#gradient)" />
+  <path d="M110,60 L130,60 L130,120 L110,120 Z" fill="#6EAEC7"/>
+  <path d="M150,30 L170,30 L170,120 L150,120 Z" fill="#6EAEC7"/>
+  <path d="M190,70 L210,70 L210,120 L190,120 Z" fill="#6EAEC7"/>
+  <path d="M80,120 L240,120" stroke="#6EAEC7" stroke-width="4" />
+  <text x="155" y="25" font-family="Arial" font-size="16" text-anchor="middle" fill="#2D7A9C">Activity Tracking</text>
+</svg>

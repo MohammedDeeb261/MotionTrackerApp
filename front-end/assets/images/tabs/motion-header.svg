@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="150" viewBox="0 0 310 150">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A1CEDC" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#A1CEDC" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <rect width="310" height="150" fill="url(#gradient)" />
+  <path d="M85,60 Q155,45 225,60" stroke="#6EAEC7" stroke-width="3" fill="none" />
+  <path d="M85,70 L85,110 L225,110 L225,70" stroke="#6EAEC7" stroke-width="3" fill="none" />
+  <path d="M115,70 L115,110" stroke="#6EAEC7" stroke-width="2" />
+  <path d="M145,70 L145,110" stroke="#6EAEC7" stroke-width="2" />
+  <path d="M175,70 L175,110" stroke="#6EAEC7" stroke-width="2" />
+  <path d="M205,70 L205,110" stroke="#6EAEC7" stroke-width="2" />
+  <circle cx="85" cy="100" r="5" fill="#6EAEC7" />
+  <circle cx="115" cy="90" r="5" fill="#6EAEC7" />
+  <circle cx="145" cy="80" r="5" fill="#6EAEC7" />
+  <circle cx="175" cy="85" r="5" fill="#6EAEC7" />
+  <circle cx="205" cy="75" r="5" fill="#6EAEC7" />
+  <circle cx="225" cy="90" r="5" fill="#6EAEC7" />
+  <text x="155" y="25" font-family="Arial" font-size="16" text-anchor="middle" fill="#2D7A9C">Motion Analysis</text>
+</svg>

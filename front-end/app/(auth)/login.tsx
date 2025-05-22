@@ -4,7 +4,6 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/context/AuthContext';
 import { router } from 'expo-router';
-import { Image } from 'expo-image';
 import { KeyboardAvoidingView, Platform } from 'react-native';
 
 export default function LoginScreen() {
@@ -42,10 +41,6 @@ export default function LoginScreen() {
     >
       <ThemedView style={styles.container}>
         <ThemedView style={styles.logoContainer}>
-          <Image
-            source={require('@/assets/images/partial-react-logo.png')}
-            style={styles.logo}
-          />
           <ThemedText type="title">Motion Tracker</ThemedText>
         </ThemedView>
         
@@ -102,11 +97,6 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     marginBottom: 40,
-  },
-  logo: {
-    width: 120,
-    height: 120,
-    marginBottom: 20,
   },
   inputContainer: {
     width: '100%',

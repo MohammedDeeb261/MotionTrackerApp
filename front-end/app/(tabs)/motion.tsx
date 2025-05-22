@@ -4,7 +4,6 @@ import { StyleSheet, Text, View, Alert, Dimensions, TouchableOpacity } from 'rea
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../context/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Image } from 'expo-image';
 import { ThemedView } from '@/components/ThemedView';
 import { ThemedText } from '@/components/ThemedText';
 import ParallaxScrollView from '@/components/ParallaxScrollView';
@@ -16,6 +15,12 @@ type ActivityDurations = { [key: string]: number };
 const API_URL = 'http://192.168.1.239:5000/predict';
 const WINDOW_SIZE = 100; // 1 second at 100Hz
 const OVERLAP = 0.5; // 50% overlap
+
+// Activity duration tracking:
+// - Sensor data is collected at 100Hz
+// - Windows are processed every 0.5 seconds (100ms x 50% overlap)
+// - Duration is incremented every 5 seconds in the update interval
+// - UI updates happen every 1 second to show accurate real-time duration
 const ACTIVITY_STORAGE_KEY = 'motiontracker_activity_durations';
 const GOALS_UPDATE_KEY = 'motiontracker_last_goals_update';
 
@@ -70,13 +75,24 @@ export default function MotionScreen() {
       if (lastActivityRef.current && activityStartTimeRef.current) {
         const currentTime = Date.now();
         const currentActivity = lastActivityRef.current;
+        
+        // Calculate exact elapsed time since activity started
         const elapsedSeconds = Math.floor((currentTime - activityStartTimeRef.current) / 1000);
         const baseDuration = totalDurationsRef.current[currentActivity] || 0;
+        const totalDuration = baseDuration + elapsedSeconds;
         
-        // Create a temporary state update that includes the current elapsed time
-        // This doesn't affect the actual stored durations until a formal update
+        // For UI display, show base duration plus elapsed time since last update
         const updatedTimes = {...totalDurationsRef.current};
-        updatedTimes[currentActivity] = baseDuration + elapsedSeconds;
+        updatedTimes[currentActivity] = totalDuration;
+        
+        // Comprehensive debug logs to track UI updates
+        console.log(`[MOTION UI UPDATE] ${currentActivity} - ` +
+          `base: ${baseDuration}s, ` +
+          `elapsed: ${elapsedSeconds}s, ` +
+          `total: ${totalDuration}s, ` +
+          `startTime: ${new Date(activityStartTimeRef.current).toISOString()}, ` +
+          `currentTime: ${new Date(currentTime).toISOString()}`
+        );
         
         // Update the UI with the live duration
         setActivityTimes(updatedTimes);
@@ -84,21 +100,29 @@ export default function MotionScreen() {
         // Toggle blink state for live indicator
         setBlinkIndicator(prev => !prev);
         
-        // Share the current live duration with AsyncStorage for profile screen
-        const liveActivityKey = 'motiontracker_current_activity';
-        AsyncStorage.setItem(liveActivityKey, JSON.stringify({
+        // Create updated activity data
+        const activityData = {
           activity: currentActivity,
           startTime: activityStartTimeRef.current,
-          baseDuration: baseDuration
-        }));
+          baseDuration: baseDuration,
+          currentTotalDuration: totalDuration, // Include current total for immediate use
+          lastUpdated: currentTime // Use numeric timestamp for consistency
+        };
+        
+        // Share the current live duration with AsyncStorage for profile screen
+        const liveActivityKey = 'motiontracker_current_activity';
+        AsyncStorage.setItem(liveActivityKey, JSON.stringify(activityData));
       }
     };
     
-    // Set up interval for UI updates (every 1 second)
-    uiUpdateIntervalRef.current = setInterval(updateUIWithCurrentDuration, 1000);
+    // Set up interval for UI updates (precisely every 1000ms)
+    uiUpdateIntervalRef.current = setInterval(updateUIWithCurrentDuration, 1000) as unknown as NodeJS.Timeout;
     
     // Call once immediately to avoid delay
     updateUIWithCurrentDuration();
+    
+    // Log that the UI update interval has been set up
+    console.log("UI update interval initialized - updates every 1 second");
     
     // Clean up interval on unmount
     return () => {
@@ -156,31 +180,30 @@ export default function MotionScreen() {
               // Start tracking new activity
               const currentTime = Date.now();
               
-              // Add half a second for each prediction of any activity
+              // If this is the same activity as before, add a small bonus time
+              // for each successful detection to compensate for any system delays
               if (lastActivityRef.current === newActivity) {
-                // Same activity was detected again, add 0.5 seconds bonus time
-                const bonusTime = 0.5; // half a second in seconds
                 const currentActivity = newActivity;
-                const currentDuration = totalDurationsRef.current[currentActivity] || 0;
                 
-                // Update duration in our tracking ref with the bonus time and round to nearest integer
-                // This prevents accumulation of floating point values that can't be stored in the database
-                totalDurationsRef.current[currentActivity] = Math.round(currentDuration + bonusTime);
+                // Add 0.5 second to the activity duration for each successful detection
+                const bonusTimeSeconds = 0.5;
+                const prevDuration = totalDurationsRef.current[currentActivity] || 0;
+                totalDurationsRef.current[currentActivity] = prevDuration + bonusTimeSeconds;
                 
                 // Update state for UI
                 setActivityTimes({...totalDurationsRef.current});
                 
-                // Update the shared activity state for profile screen with new duration
+                // Update the shared activity state to reflect the bonus time
                 AsyncStorage.setItem('motiontracker_current_activity', JSON.stringify({
                   activity: currentActivity,
                   startTime: activityStartTimeRef.current,
-                  baseDuration: totalDurationsRef.current[currentActivity]
+                  baseDuration: totalDurationsRef.current[currentActivity],
+                  currentTotalDuration: totalDurationsRef.current[currentActivity], // Current total equals updated base
+                  lastUpdated: currentTime
                 }));
                 
-                // Update any active goals that match this activity
-                updateActiveGoals(currentActivity, bonusTime);
-                
-                console.log(`Added ${bonusTime}s bonus to ${currentActivity}, total now: ${totalDurationsRef.current[currentActivity]}s`);
+                // Log current detection and bonus time for debugging
+                console.log(`Same activity detected: ${currentActivity}, added ${bonusTimeSeconds}s bonus time, now at ${totalDurationsRef.current[currentActivity]}s`);
               }
               
               // If this is the first prediction or we have a different activity
@@ -226,10 +249,13 @@ export default function MotionScreen() {
               lastActivityRef.current = newActivity;
               
               // Update the shared activity state for profile screen
+              const baseDuration = totalDurationsRef.current[newActivity] || 0;
               AsyncStorage.setItem('motiontracker_current_activity', JSON.stringify({
                 activity: newActivity,
                 startTime: currentTime,
-                baseDuration: totalDurationsRef.current[newActivity] || 0
+                baseDuration: baseDuration,
+                currentTotalDuration: baseDuration, // At the start, current total equals base
+                lastUpdated: currentTime
               }));
               
               // Debug logging
@@ -259,15 +285,40 @@ export default function MotionScreen() {
           const activity = lastActivityRef.current;
           const prevDuration = totalDurationsRef.current[activity] || 0;
           
-          // Update the duration in our tracking ref without resetting the activity
-          // Ensure we're storing integers to avoid database type errors
-          totalDurationsRef.current[activity] = Math.floor(prevDuration + elapsedSeconds);
+          // Update the reference duration with elapsed time
+          const newDuration = Math.floor(prevDuration + elapsedSeconds);
+          totalDurationsRef.current[activity] = newDuration;
+          
+          // Log this batch update for debugging
+          console.log(`Batch update: Added ${elapsedSeconds}s to ${activity}, now at ${newDuration}s`);
+          
+          // Sync to UI state
+          setActivityTimes({...totalDurationsRef.current});
           
           // Update any active goals that match this activity
           updateActiveGoals(activity, elapsedSeconds);
           
-          // Reset the timer for the current activity
+          // Reset the timer for the current activity to the current time
+          // This ensures we only count time once
           activityStartTimeRef.current = currentTime;
+          
+          // Update the shared activity state with the new base duration
+          // This ensures all components have the latest base duration after each batch update
+          const updatedActivityData = {
+            activity: activity,
+            startTime: currentTime,
+            baseDuration: newDuration,
+            currentTotalDuration: newDuration, // Reset elapsed time since we just updated the base
+            lastUpdated: currentTime
+          };
+          
+          // Log the batch update to AsyncStorage for debugging
+          console.log(`[MOTION BATCH UPDATE] ${activity} - ` +
+            `Updated AsyncStorage with new base duration: ${newDuration}s, ` +
+            `new startTime: ${new Date(currentTime).toISOString()}`
+          );
+          
+          AsyncStorage.setItem('motiontracker_current_activity', JSON.stringify(updatedActivityData));
         }
       }
       
@@ -1033,10 +1084,11 @@ export default function MotionScreen() {
   
   // Helper function to convert percentage to style object
   const getProgressBarStyle = (seconds: number) => {
-    // For React Native we need a percentage string like '50%'
+    // For React Native we need percentage as a decimal value
     if (!totalActivityTime) return { width: '0%' };
     const percentage = Math.min(100, (seconds / totalActivityTime) * 100);
-    return { width: `${percentage}%` };
+    // Return string for web compatibility but this will need to be handled differently for native views
+    return { width: percentage + '%' } as any;
   };
   
   // Known activity types and their corresponding goal types
@@ -1154,13 +1206,7 @@ const updateActiveGoals = async (activity: string, durationSeconds: number) => {
   
   return (
     <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.headerImage}
-        />
-      }>
+      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}>
       <ThemedView style={styles.container}>
         <ThemedText type="title" style={styles.header}>Motion Tracking</ThemedText>
         
@@ -1292,14 +1338,6 @@ const styles = StyleSheet.create({
   container: { 
     padding: 16,
     paddingBottom: 32,
-  },
-  headerImage: {
-    height: 120,
-    width: 180,
-    bottom: -30,
-    right: -20,
-    position: 'absolute',
-    opacity: 0.6,
   },
   header: { 
     marginBottom: 16,

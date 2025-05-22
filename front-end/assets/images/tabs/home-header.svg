@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="150" viewBox="0 0 310 150">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A1CEDC" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#A1CEDC" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <rect width="310" height="150" fill="url(#gradient)" />
+  <path d="M155,40 C127,40 105,62 105,90 C105,118 127,140 155,140 C183,140 205,118 205,90 C205,62 183,40 155,40 Z M155,130 C132.9,130 115,112.1 115,90 C115,67.9 132.9,50 155,50 C177.1,50 195,67.9 195,90 C195,112.1 177.1,130 155,130 Z M155,60 C138.4,60 125,73.4 125,90 C125,106.6 138.4,120 155,120 C171.6,120 185,106.6 185,90 C185,73.4 171.6,60 155,60 Z" fill="#6EAEC7"/>
+  <text x="155" y="25" font-family="Arial" font-size="16" text-anchor="middle" fill="#2D7A9C">MotionTracker Home</text>
+</svg>
