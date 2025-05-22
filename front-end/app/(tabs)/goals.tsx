@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, TouchableOpacity, View, ActivityIndicator, Alert, Modal, TextInput, ScrollView, Platform } from 'react-native';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -9,6 +9,7 @@ import { Image } from 'expo-image';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Define types for goals
 interface Goal {
@@ -54,6 +55,15 @@ export default function GoalsScreen() {
   });
   
   const [showDatePicker, setShowDatePicker] = useState(false);
+  
+  // Refs for update intervals
+  const dbUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const liveUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Current activity tracking state
+  const [currentActivity, setCurrentActivity] = useState<string | null>(null);
+  const [blinkIndicator, setBlinkIndicator] = useState<boolean>(true);
+  const [localGoalUpdates, setLocalGoalUpdates] = useState<{[goalId: string]: number}>({});
   
   // Format duration from milliseconds to readable time
   const formatDuration = (milliseconds: number): string => {
@@ -114,6 +124,7 @@ export default function GoalsScreen() {
   // Function to calculate progress percentage
   const calculateProgress = (current: number, target: number): number => {
     if (!target || target <= 0) return 0;
+    if (!current || current <= 0) return 0;
     const progress = Math.min(100, Math.floor((current / target) * 100));
     return progress;
   };
@@ -350,6 +361,72 @@ export default function GoalsScreen() {
     }
   };
   
+  // Function to update goal durations in real-time
+  const updateLiveGoalDurations = async () => {
+    try {
+      // Get current activity from AsyncStorage
+      const currentActivityData = await AsyncStorage.getItem('motiontracker_current_activity');
+      
+      if (!currentActivityData) {
+        // No active tracking, clear current activity
+        if (currentActivity !== null) {
+          setCurrentActivity(null);
+        }
+        // Clear any existing local updates when no activity is being tracked
+        if (Object.keys(localGoalUpdates).length > 0) {
+          setLocalGoalUpdates({});
+        }
+        return;
+      }
+      
+      // Parse current activity data
+      const { activity, startTime } = JSON.parse(currentActivityData);
+      
+      // Only update current activity if it has changed
+      if (currentActivity !== activity) {
+        setCurrentActivity(activity);
+      }
+      
+      // Toggle blink indicator for visual feedback of active tracking
+      setBlinkIndicator(prev => !prev);
+      
+      // Update affected goals with live data
+      if (activity && goals.length > 0) {
+        // Get active goals that are affected by this activity type
+        const affectedGoals = goals.filter(g => 
+          !g.is_completed && 
+          (g.activity_type === activity || 
+           (g.activity_type === 'Run & Walk' && (activity === 'Run' || activity === 'Walk')))
+        );
+        
+        if (affectedGoals.length > 0) {
+          // Calculate exact elapsed time since activity started
+          const currentTime = Date.now();
+          const elapsedMs = currentTime - startTime;
+          
+          // Create a completely new updates object each time
+          const updates: {[goalId: string]: number} = {};
+          
+          affectedGoals.forEach(goal => {
+            // Always calculate from base DB value to avoid accumulation issues
+            updates[goal.id] = goal.current_duration_ms + elapsedMs;
+          });
+          
+          // Force update on every interval tick to ensure continuous updates
+          // This ensures the UI updates every second regardless of deep equality checks
+          setLocalGoalUpdates(updates);
+        } else {
+          // No affected goals, clear any previous updates
+          if (Object.keys(localGoalUpdates).length > 0) {
+            setLocalGoalUpdates({});
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error updating live goal durations:', error);
+    }
+  };
+  
   // Function to handle creating a new goal
   const handleCreateGoal = async () => {
     if (!user) {
@@ -406,25 +483,102 @@ export default function GoalsScreen() {
     }
   };
   
+  // Function to delete a goal
+  const handleDeleteGoal = async (goalId: string, title: string) => {
+    if (!user) return;
+    
+    // Ask for confirmation before deleting
+    Alert.alert(
+      'Delete Goal',
+      `Are you sure you want to delete the goal "${title}"?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('user_activity_goals')
+                .delete()
+                .eq('id', goalId)
+                .eq('user_id', user.id);
+                
+              if (error) {
+                console.error('Error deleting goal:', error);
+                Alert.alert('Error', 'Failed to delete the goal');
+              } else {
+                // Update local state
+                setGoals(goals.filter(g => g.id !== goalId));
+                
+                // Clear any local updates for this goal
+                if (localGoalUpdates[goalId]) {
+                  const updatedLocalGoals = { ...localGoalUpdates };
+                  delete updatedLocalGoals[goalId];
+                  setLocalGoalUpdates(updatedLocalGoals);
+                }
+              }
+            } catch (error) {
+              console.error('Exception deleting goal:', error);
+              Alert.alert('Error', 'An unexpected error occurred');
+            }
+          }
+        }
+      ]
+    );
+  };
+  
   // Load goals when the screen is focused
   useFocusEffect(
     useCallback(() => {
-      if (user) {
-        loadGoals();
-        updateGoalsProgress();
+      // Clear any existing intervals first to avoid duplicates
+      if (dbUpdateIntervalRef.current) {
+        clearInterval(dbUpdateIntervalRef.current);
+        dbUpdateIntervalRef.current = null;
+      }
+      if (liveUpdateIntervalRef.current) {
+        clearInterval(liveUpdateIntervalRef.current);
+        liveUpdateIntervalRef.current = null;
       }
       
-      // Set up interval to update goals progress (every 60 seconds)
-      const progressInterval = setInterval(() => {
-        if (user) {
-          updateGoalsProgress();
-        }
-      }, 60000);
+      if (user) {
+        // Load initial data
+        loadGoals();
+        updateGoalsProgress();
+        
+        // Immediately update the live durations
+        updateLiveGoalDurations();
+        
+        // Set up interval to update goals progress with database (every 60 seconds)
+        dbUpdateIntervalRef.current = setInterval(() => {
+          if (user) {
+            updateGoalsProgress();
+          }
+        }, 60000) as unknown as NodeJS.Timeout;
+        
+        // Set up interval for real-time goal progress updates (every second)
+        liveUpdateIntervalRef.current = setInterval(() => {
+          if (user) {
+            updateLiveGoalDurations();
+          }
+        }, 1000) as unknown as NodeJS.Timeout;
+      }
       
       return () => {
-        clearInterval(progressInterval);
+        // Clean up intervals when component unmounts or loses focus
+        if (dbUpdateIntervalRef.current) {
+          clearInterval(dbUpdateIntervalRef.current);
+          dbUpdateIntervalRef.current = null;
+        }
+        if (liveUpdateIntervalRef.current) {
+          clearInterval(liveUpdateIntervalRef.current);
+          liveUpdateIntervalRef.current = null;
+        }
       };
-    }, [user, refreshCounter])
+    }, [user, refreshCounter, goals.length])
   );
   
   // Handle date change
@@ -437,7 +591,19 @@ export default function GoalsScreen() {
   
   // UI components for different goal types
   const renderGoalItem = (goal: Goal) => {
-    const progress = calculateProgress(goal.current_duration_ms, goal.target_duration_ms);
+    // Check if this goal is receiving real-time updates
+    const isReceivingLiveUpdates = !goal.is_completed && 
+      ((currentActivity === goal.activity_type) || 
+       (goal.activity_type === 'Run & Walk' && (currentActivity === 'Run' || currentActivity === 'Walk')));
+    
+    // Get the current duration, including live updates if applicable
+    const currentDuration = isReceivingLiveUpdates && Object.keys(localGoalUpdates).length > 0 && localGoalUpdates[goal.id] !== undefined
+      ? localGoalUpdates[goal.id]
+      : goal.current_duration_ms;
+    
+    // Calculate progress percentage based on current duration (will update in real-time)
+    // Force integer Math.floor to ensure React recognizes the change in progress
+    const progress = Math.floor(calculateProgress(currentDuration, goal.target_duration_ms));
     const progressColor = getProgressColor(progress);
     
     // Format dates for display
@@ -467,9 +633,17 @@ export default function GoalsScreen() {
       >
         <View style={styles.goalHeader}>
           <ThemedText style={styles.goalTitle}>{goal.title}</ThemedText>
-          <ThemedText style={styles.goalType}>
-            {goal.goal_type.charAt(0).toUpperCase() + goal.goal_type.slice(1)}
-          </ThemedText>
+          <View style={styles.goalHeaderRight}>
+            <ThemedText style={styles.goalType}>
+              {goal.goal_type.charAt(0).toUpperCase() + goal.goal_type.slice(1)}
+            </ThemedText>
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() => handleDeleteGoal(goal.id, goal.title)}
+            >
+              <IconSymbol name="minus.circle.fill" size={22} color="#ff6b6b" />
+            </TouchableOpacity>
+          </View>
         </View>
         
         <View style={styles.goalDetails}>
@@ -505,12 +679,27 @@ export default function GoalsScreen() {
         <View style={styles.progressSection}>
           <View style={styles.progressTextContainer}>
             <ThemedText style={styles.progressLabel}>Progress: </ThemedText>
-            <ThemedText style={styles.progressPercentage}>{progress}%</ThemedText>
+            <ThemedText 
+              style={[
+                styles.progressPercentage,
+                isReceivingLiveUpdates && blinkIndicator ? {color: '#0066cc'} : null
+              ]}
+              key={`progress-${goal.id}-${progress}-${blinkIndicator}`} /* Key forces text re-render */
+            >
+              {progress}%
+              {isReceivingLiveUpdates && ' ●'}
+            </ThemedText>
           </View>
           
           <View style={styles.durationTextContainer}>
-            <ThemedText style={styles.currentDuration}>
-              {formatDuration(goal.current_duration_ms)}
+            <ThemedText 
+              style={[
+                styles.currentDuration,
+                isReceivingLiveUpdates && blinkIndicator ? {color: '#0066cc'} : null
+              ]}
+              key={`duration-${goal.id}-${currentDuration}-${blinkIndicator}`} /* Key forces text re-render */
+            >
+              {formatDuration(currentDuration)}
             </ThemedText>
             <ThemedText style={styles.durationSeparator}> / </ThemedText>
             <ThemedText style={styles.targetDuration}>
@@ -519,7 +708,13 @@ export default function GoalsScreen() {
           </View>
           
           <View style={styles.progressBarContainer}>
-            <View style={[styles.progressBar, {width: `${progress}%`, backgroundColor: progressColor}]} />
+            <View 
+              key={`${goal.id}-${Math.round(currentDuration)}-${progress}-${Date.now() % 2000}`} /* Key forces re-render with timestamp */
+              style={[
+                styles.progressBar, 
+                {width: `${progress}%`, backgroundColor: progressColor}
+              ]} 
+            />
           </View>
         </View>
       </View>
@@ -645,17 +840,121 @@ export default function GoalsScreen() {
           </View>
           
           <View style={styles.formGroup}>
-            <ThemedText style={styles.formLabel}>Target Duration (HH:MM:SS)</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="00:30:00"
-              placeholderTextColor="#999"
-              value={formatMsToTimeString(form.target_duration_ms)}
-              onChangeText={(text) => {
-                const durationMs = parseTimeToMs(text);
-                setForm({...form, target_duration_ms: durationMs});
-              }}
-            />
+            <ThemedText style={styles.formLabel}>Target Duration</ThemedText>
+            
+            <View style={styles.durationPickerContainer}>
+              <View style={styles.durationPickerUnit}>
+                <ThemedText style={styles.durationPickerLabel}>Hours</ThemedText>
+                <View style={styles.durationPickerControls}>
+                  <TouchableOpacity 
+                    style={styles.durationButton}
+                    onPress={() => {
+                      const currentDuration = form.target_duration_ms;
+                      const hours = Math.floor(currentDuration / 3600000);
+                      const newHours = Math.max(0, hours - 1);
+                      const remainingMs = currentDuration % 3600000;
+                      setForm({
+                        ...form, 
+                        target_duration_ms: (newHours * 3600000) + remainingMs
+                      });
+                    }}
+                  >
+                    <IconSymbol name="minus" size={20} color="#666" />
+                  </TouchableOpacity>
+                  
+                  <ThemedText style={styles.durationValue}>
+                    {Math.floor(form.target_duration_ms / 3600000)}
+                  </ThemedText>
+                  
+                  <TouchableOpacity 
+                    style={styles.durationButton}
+                    onPress={() => {
+                      const currentDuration = form.target_duration_ms;
+                      const hours = Math.floor(currentDuration / 3600000);
+                      const remainingMs = currentDuration % 3600000;
+                      setForm({
+                        ...form, 
+                        target_duration_ms: ((hours + 1) * 3600000) + remainingMs
+                      });
+                    }}
+                  >
+                    <IconSymbol name="plus" size={20} color="#666" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              
+              <View style={styles.durationPickerUnit}>
+                <ThemedText style={styles.durationPickerLabel}>Minutes</ThemedText>
+                <View style={styles.durationPickerControls}>
+                  <TouchableOpacity 
+                    style={styles.durationButton}
+                    onPress={() => {
+                      const currentDuration = form.target_duration_ms;
+                      const totalMinutes = Math.floor((currentDuration % 3600000) / 60000);
+                      const newMinutes = Math.max(0, totalMinutes - 5);
+                      const hours = Math.floor(currentDuration / 3600000);
+                      const seconds = Math.floor((currentDuration % 60000) / 1000);
+                      setForm({
+                        ...form, 
+                        target_duration_ms: (hours * 3600000) + (newMinutes * 60000) + (seconds * 1000)
+                      });
+                    }}
+                  >
+                    <IconSymbol name="minus" size={20} color="#666" />
+                  </TouchableOpacity>
+                  
+                  <ThemedText style={styles.durationValue}>
+                    {Math.floor((form.target_duration_ms % 3600000) / 60000)}
+                  </ThemedText>
+                  
+                  <TouchableOpacity 
+                    style={styles.durationButton}
+                    onPress={() => {
+                      const currentDuration = form.target_duration_ms;
+                      const totalMinutes = Math.floor((currentDuration % 3600000) / 60000);
+                      const newMinutes = Math.min(59, totalMinutes + 5);
+                      const hours = Math.floor(currentDuration / 3600000);
+                      const seconds = Math.floor((currentDuration % 60000) / 1000);
+                      setForm({
+                        ...form, 
+                        target_duration_ms: (hours * 3600000) + (newMinutes * 60000) + (seconds * 1000)
+                      });
+                    }}
+                  >
+                    <IconSymbol name="plus" size={20} color="#666" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+            
+            <View style={styles.durationSummary}>
+              <ThemedText style={styles.durationSummaryText}>
+                Total: {formatDuration(form.target_duration_ms)}
+              </ThemedText>
+            </View>
+            
+            <View style={styles.durationPresets}>
+              <TouchableOpacity
+                style={styles.presetButton}
+                onPress={() => setForm({...form, target_duration_ms: 900000})} // 15min
+              >
+                <ThemedText style={styles.presetButtonText}>15 min</ThemedText>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.presetButton}
+                onPress={() => setForm({...form, target_duration_ms: 1800000})} // 30min
+              >
+                <ThemedText style={styles.presetButtonText}>30 min</ThemedText>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.presetButton}
+                onPress={() => setForm({...form, target_duration_ms: 3600000})} // 1hr
+              >
+                <ThemedText style={styles.presetButtonText}>1 hour</ThemedText>
+              </TouchableOpacity>
+            </View>
           </View>
           
           {form.goal_type === 'regular' && (
@@ -825,9 +1124,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  goalHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   goalTitle: {
     fontSize: 18,
     fontWeight: '600',
+    flex: 1,
+    marginRight: 8,
   },
   goalType: {
     fontSize: 14,
@@ -836,6 +1141,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
     borderRadius: 6,
     overflow: 'hidden',
+    marginRight: 8,
+  },
+  deleteButton: {
+    padding: 4,
   },
   goalDetails: {
     marginBottom: 16,
@@ -1048,6 +1357,62 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 16,
+  },
+  durationPickerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginVertical: 8,
+  },
+  durationPickerUnit: {
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: 4,
+  },
+  durationPickerLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  durationPickerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    padding: 8,
+  },
+  durationButton: {
+    padding: 8,
+    borderRadius: 4,
+    backgroundColor: '#e0e0e0',
+  },
+  durationValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    paddingHorizontal: 16,
+  },
+  durationSummary: {
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  durationSummaryText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  durationPresets: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  presetButton: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 4,
+    marginHorizontal: 4,
+  },
+  presetButtonText: {
+    fontSize: 14,
   },
   modalButtons: {
     flexDirection: 'row',
