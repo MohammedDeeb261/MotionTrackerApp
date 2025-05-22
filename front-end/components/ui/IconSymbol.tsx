@@ -31,11 +31,16 @@ export function IconSymbol({
   color,
   style,
 }: {
-  name: IconSymbolName;
+  name: IconSymbolName | string;
   size?: number;
   color: string | OpaqueColorValue;
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
 }) {
-  return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
+  // Handle string names that may not be in the mapping
+  const iconName = typeof name === 'string' && !(name in MAPPING) 
+    ? 'circle' // Default fallback icon
+    : MAPPING[name as IconSymbolName];
+  
+  return <MaterialIcons color={color} size={size} name={iconName} style={style} />;
 }
